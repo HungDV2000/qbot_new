@@ -1,6 +1,29 @@
 [global]
 
 # ══════════════════════════════════════════════════════════════════════════════
+# NẠP CẤU HÌNH TỪ SHEET TỔNG (tuỳ chọn)
+#
+# Khai đủ HAI dòng dưới đây thì danh sách tài khoản, API key và cấu hình từng
+# tài khoản lấy từ Google Sheet — khách đổi key không phải mở file trên VPS.
+# ĐỂ TRỐNG = chạy y như cũ, đọc hết từ file này.
+#
+#   bot_id                 tên TAB trên sheet tổng dành cho máy này.
+#                          Một sheet tổng phục vụ được nhiều VPS, mỗi máy 1 tab.
+#   config_spreadsheet_id  ID của sheet tổng.
+#   config_reload_seconds  bao lâu dò một lần xem cấu hình có đổi (mặc định 300).
+#                          Chỉ đọc MỘT ô B1 nên rất rẻ.
+#
+# Đổi cấu hình trên sheet → nhớ ĐỔI Ô B1 (phiên bản) → bot tự khởi động lại
+# và nạp cấu hình mới. Không đổi B1 thì bot không biết là có thay đổi.
+#
+# ⚠️ Sheet tổng đọc lỗi thì bot DỪNG HẲN, không dùng giá trị dự phòng —
+#    thà không chạy còn hơn chạy bằng key cũ mà tưởng đã đổi.
+# ══════════════════════════════════════════════════════════════════════════════
+bot_id =
+config_spreadsheet_id =
+config_reload_seconds = 300
+
+# ══════════════════════════════════════════════════════════════════════════════
 # ĐA TÀI KHOẢN — chạy nhiều bộ (key/secret/sheetID) từ CÙNG 1 file config này
 # ══════════════════════════════════════════════════════════════════════════════
 # Khai danh sách tài khoản, mỗi tên tương ứng 1 section [ten] ở CUỐI file.

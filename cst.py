@@ -84,6 +84,61 @@ def get_accounts():
     return [a.strip() for a in raw.split(',') if a.strip()]
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# NẠP CẤU HÌNH TỪ SHEET TỔNG (nếu có khai)
+#
+#   [global]
+#   bot_id = QBOT01
+#   config_spreadsheet_id = 1AbC...XyZ
+#
+# Khai đủ hai dòng trên thì danh sách tài khoản, API key và cấu hình từng tài
+# khoản lấy từ Google Sheet — khách đổi key không phải mở file trên VPS.
+# KHÔNG khai thì chạy y như cũ, đọc hết từ config.ini.
+#
+# Cách nối: mỗi dòng trên sheet được dựng thành một section trong bộ nhớ, y
+# như khai tay trong config.ini. Nhờ vậy toàn bộ phần phía dưới (khớp tên, ghi
+# đè lên [global], mở tiến trình con cho từng tài khoản) chạy nguyên, không
+# phải sửa dòng nào.
+# ══════════════════════════════════════════════════════════════════════════════
+bot_id = config.get('global', 'bot_id', fallback='').strip()
+config_spreadsheet_id = config.get('global', 'config_spreadsheet_id', fallback='').strip()
+config_sheet_version = ''          # phiên bản đọc được, dùng để dò thay đổi
+nap_tu_sheet = bool(config_spreadsheet_id)
+
+if nap_tu_sheet:
+    if not bot_id:
+        raise SystemExit(
+            f"❌ Có khai config_spreadsheet_id nhưng THIẾU bot_id trong {config_file}.\n"
+            f"   bot_id là tên TAB trên sheet tổng chứa cấu hình của máy này.")
+
+    import sheet_config
+    try:
+        config_sheet_version, _bang_tk = sheet_config.nap(bot_id, config_spreadsheet_id)
+    except sheet_config.LoiSheetCauHinh as _e:
+        # Theo quyết định của khách: đọc sheet lỗi thì DỪNG HẲN, không dùng
+        # giá trị dự phòng — thà không chạy còn hơn chạy bằng cấu hình cũ mà
+        # tưởng là đã đổi.
+        raise SystemExit(
+            f"❌ Không nạp được cấu hình từ sheet tổng (tab '{bot_id}').\n"
+            f"   {_e}\n"
+            f"   Sheet: {config_spreadsheet_id}\n"
+            f"   Bot DỪNG — không chạy bằng cấu hình cũ để tránh dùng nhầm key."
+        )
+
+    for _ten, _muc in _bang_tk.items():
+        if not config.has_section(_ten):
+            config.add_section(_ten)
+        for _k, _v in _muc.items():
+            if _k.startswith('__'):
+                continue          # __ten__, __bat__, __lop__ là cột điều khiển
+            # '%' phải nhân đôi, nếu không configparser hiểu là chuỗi thay thế
+            config.set(_ten, _k, str(_v).replace('%', '%%'))
+    config.set('global', 'accounts', ', '.join(_bang_tk.keys()))
+    print(f"📄 [CẤU HÌNH] Nạp từ sheet tổng — tab '{bot_id}', phiên bản "
+          f"{config_sheet_version or '(trống)'}, {len(_bang_tk)} tài khoản: "
+          f"{', '.join(_bang_tk.keys())}", flush=True)
+
+
 accounts = get_accounts()
 
 
@@ -292,6 +347,14 @@ if account:
               config.get('global', 'account_extra_keys', fallback='').split(',') if k.strip()}
     _allowed = ACCOUNT_ALLOWED_KEYS | _extra
 
+    # Danh sách khoá hạn chế này sinh ra để chặn việc khai tham số vận hành
+    # lung tung trong config.ini. Khi cấu hình đến TỪ SHEET TỔNG thì chính
+    # sheet là nơi khai có chủ đích (mỗi tài khoản một lớp, %SL/%TP riêng),
+    # nên bỏ qua hạn chế — nếu không sẽ chặn đúng thứ đang cần.
+    # Ba khoá bắt buộc key/secret/sheet VẪN được kiểm ở trên, không nới.
+    if nap_tu_sheet:
+        _allowed = _allowed | set(config[account].keys())
+
     _own_keys = set(config[account].keys()) - set(config.defaults().keys())
     _not_allowed = sorted(k for k in _own_keys if k not in _allowed)
     if _not_allowed:
@@ -411,7 +474,16 @@ def acquire_single_instance_lock(bot_name: str):
         except OSError:
             pass
     atexit.register(_release)
+    # Giữ lại để khởi động lại chủ động có thể NHẢ KHOÁ TRƯỚC khi mở tiến
+    # trình mới — sai thứ tự là hai bot cùng chạy → đặt lệnh trùng.
+    global nha_khoa
+    nha_khoa = _release
     return lock_file
+
+
+def nha_khoa():
+    """Nhả khoá chống chạy trùng. Được gán lại khi thực sự giành được khoá."""
+    pass
 
 
 # Tự động khoá khi chạy trực tiếp một bot (file hd_*.py) — không cần sửa bot nào.
@@ -419,6 +491,14 @@ def acquire_single_instance_lock(bot_name: str):
 try:
     _entry = os.path.basename(_sys.argv[0] or '')
     if _entry.startswith('hd_') and _entry.endswith('.py'):
+        # Nếu tiến trình này vừa được sinh ra do đổi cấu hình, chờ tiến trình
+        # cũ thoát hẳn rồi mới giành khoá.
+        try:
+            import config_watcher as _cw
+            _cw.cho_neu_vua_khoi_dong_lai()
+            _cw.khoi_tao(config_sheet_version)
+        except Exception as _e:
+            print(f"⚠️ config_watcher: {_e}", flush=True)
         acquire_single_instance_lock(_entry[:-3])
 except SystemExit:
     raise
