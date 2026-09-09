@@ -1,0 +1,292 @@
+[global]
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ĐA TÀI KHOẢN — chạy nhiều bộ (key/secret/sheetID) từ CÙNG 1 file config này
+# ══════════════════════════════════════════════════════════════════════════════
+# Khai danh sách tài khoản, mỗi tên tương ứng 1 section [ten] ở CUỐI file.
+# Để TRỐNG = chế độ 1 tài khoản (chạy y như trước, dùng thẳng key bên dưới).
+#
+#   accounts = kh_a, kh_b, kh_c
+#
+# Chạy:  ./start_all_bots.sh            → chạy TẤT CẢ tài khoản
+#        ./start_all_bots.sh kh_a       → chỉ chạy 1 tài khoản
+#        ./stop_all_bots.sh kh_a        → dừng 1 tài khoản
+#        ./status.sh                    → xem tài khoản nào đang chạy
+#
+# Mỗi tài khoản có log/dữ liệu RIÊNG (logs/kh_a, data/kh_a, order/kh_a) — cách ly
+# hoàn toàn, tài khoản này lỗi không ảnh hưởng tài khoản kia.
+# Mọi cấu hình khai ở [global] dùng CHUNG; section tài khoản chỉ ghi cái khác biệt.
+accounts =
+
+max_increase_decrease_4h_day_count = 60
+
+
+lenh2_rate_long = 0.3
+lenh2_rate_short = 0.3
+lenh3_rate_long = 0.6
+lenh3_rate_short = 0.6
+
+;thêm biến
+lenh3_callback_rate =1
+; O trống / NGAY / NOW trên sheet Chờ và khớp → TP trailing kích hoạt ngay tại mark/last (mặc định true nếu không khai báo)
+lenh3_o_empty_immediate = true
+# ── BOT HỦY LỆNH THEO LỊCH (hd_cancel_orders_schedule.py) ────────────────────
+# Bao lâu quét 1 lần (phút)
+cancel_orders_minutes = 1
+
+# Chỉ hủy lệnh VÀO đã treo quá bao nhiêu phút (chưa khớp = coi như hết cơ hội).
+# Lệnh mới hơn mốc này được GIỮ để chờ khớp — quan trọng khi rải lệnh (DCA).
+cancel_order_after_minutes = 30
+
+# false (mặc định, AN TOÀN): KHÔNG bao giờ hủy lệnh SL/TP (reduce_only),
+#        chỉ hủy lệnh VÀO treo quá lâu.
+# true  : quay lại hành vi CŨ — hủy TẤT CẢ lệnh mỗi lần quét.
+#        ⚠️ Bật true sẽ xoá cả SL/TP vừa đặt → vị thế không được bảo vệ!
+cancel_all_orders = false
+
+is_print_mode = false
+top_count= 50
+
+# ── CHỌN MÃ LẤY DỮ LIỆU ───────────────────────────────────────────────────────
+# list = (MẶC ĐỊNH) CHỈ lấy đúng các mã khai ở symbol_list bên dưới
+# all  = lấy top mã biến động mạnh nhất 24h (theo top_count) — như bản cũ
+symbol_mode = list
+
+# Danh sách mã khi symbol_mode = list.
+#   • Không phân biệt hoa/thường: btc = BTC
+#   • Viết kiểu nào cũng được: BTC | BTCUSDT | BTC/USDT | BTC/USDT:USDT
+#   • Trùng nhau thì tự bỏ, giữ lần khai đầu tiên
+#   • Mã sai sẽ được BÁO RÕ TÊN, không bỏ im lặng
+symbol_list = BTC, ETH, SOL, XRP, BNB, DOGE
+
+# Cột mà hd_update_price ghi giá vào (tab "100 mã").
+# C = "Giá trị hiện thời". ĐỪNG để Y — cột đó là "% đến BB1h dưới".
+price_column = C
+
+# ── CHẾ ĐỘ CHẠY hd_update_all ────────────────────────────────────────────────
+# balance_only (MẶC ĐỊNH): chỉ lấy SỐ DƯ, ghi vào J1:M2 tab ĐẶT LỆNH.
+#     1 lượt gọi Binance + 1 lượt ghi Google, ~1 giây, rất nhẹ RAM.
+#     KHÔNG đụng tab "100 mã" → xoá tab đó khỏi sheet cũng không sao.
+#     hd_update_price cũng tự nghỉ ở chế độ này (không còn việc).
+# full: hành vi CŨ — dựng bảng 100 mã 58 cột (Bollinger, Stoch, delist...).
+#     8 lượt gọi Binance MỖI MÃ, mất 1-3 phút, tốn RAM.
+#     ⚠️ Chỉ bật khi tab "100 mã" VẪN CÒN trên sheet.
+# symbol_mode / symbol_list ở trên CHỈ có tác dụng khi update_all_mode = full.
+update_all_mode = balance_only
+
+# Cột bắt đầu ghi số dư trên tab ĐẶT LỆNH (mặc định J → vùng J1:M2).
+#   J = Số dư ví | K = Ký quỹ | L = Lãi/lỗ mở | M = Cập nhật lúc
+balance_cell = J
+time_gap_do_it = 0
+bot_token = 8431813976:AAHtvnWT3ZTLvtgqlaqYOgyQW-l0bVBwqbI
+chat_id =  -4654774917
+prefix_channel = 'QBOT DEV'
+
+;Chỉnh sửa các config cho binance phía dưới sau đó thì lưu file lại
+key_name = QBOt
+key_binance = MQ1XTP7gLaWZfxbB2juPg5OUT2E5ADhgJMKL8FtkJuPPbgCC5jcfMHNG2mRAnQ66
+secret_binance = 72PcBrF09A6Hs5l5YZ4ST3J5GkACcwCoJBBm7jA2tb4Q8Y1zImRFSueZ4GDTIHEG
+
+; file gốc
+spreadsheet_id = 1Xbbbe0bWjCIqnqZpdRJvOckF8XYYUv2oxVPdSVMttHM
+
+;để true nếu không muốn vào lệnh thật mà chỉ in ra (true hoặc false)
+test_mode = false
+
+tab_dat_lenh = ĐẶT LỆNH (100 MÃ)
+; tab_dat_lenh = test
+
+; Cấu trúc cột FIXED trên tab đặt lệnh:
+;   - Bot LIMIT (hd_order_limit.py): A=Symbol, B=Leverage, D=Giá vào, F=SL, G=TP, H=Capital
+;   - Bot cũ TRAILING (hd_order.py): A=Symbol, B=Leverage, C=Callback, D=Activation, H=Capital
+; Chọn bot chạy bằng ORDER_BOT_MODE trong start_all_bots (limit / trailing).
+
+delay_vao_lenh = 60
+
+# ── CHỐNG LỖI 429 (vượt hạn mức Google Sheets) ────────────────────────────────
+# Google cho 60 lượt ĐỌC/phút, dùng CHUNG cho TẤT CẢ tài khoản.
+# Càng nhiều tài khoản càng dễ vượt → 2 tham số dưới đây để chia tải.
+
+# Trong 1 vòng quét, trạng thái ô B2 chỉ đọc thật mỗi ngần này giây
+# (các dòng còn lại dùng lại giá trị vừa đọc).
+#   Bấm DỪNG trên sheet vẫn ăn, chậm nhất sau đúng ngần này giây.
+#   Tăng lên (15-20) nếu vẫn bị 429; giảm xuống nếu muốn phản ứng nhanh hơn.
+state_cache_ttl_sec = 10
+
+# Khởi động các tài khoản LỆCH NHAU ngần này giây, để 3 bot không cùng
+# gọi API trong một khoảnh khắc. Nhiều tài khoản thì tăng lên.
+account_start_stagger_sec = 20
+delay_vao_lenh_123 = 300
+delay_cho_va_khop = 600
+delay_calert_possition_and_open_order = 120
+delay_update_price = 120
+delay_update_all = 120
+
+; hd_update_all — audit 1 mã: đặt đúng symbol CCXT (vd BTC/USDT:USDT hoặc MLN/USDT:USDT). Để trống = không ghi file audit.
+debug_column_audit_symbol = MLN/USDT:USDT
+
+; hd_update_all — log [PROFILE] thời gian từng phase trong file log (true/false)
+profile_do_it = true
+
+# Phase 3: Data Collection & Phase 4: Notifications
+delay_track_30_prices = 60
+delay_periodic_report = 300
+
+# ─── Default values cho sheet "Chờ và khớp" (cột J-S) ────────────────────────
+# Bot sẽ tự điền các giá trị này vào cột J-S khi update sheet, user xem và chỉnh lại sau.
+# Nếu fill_default_cho_va_khop = false → cột J-S luôn rỗng (user phải tự nhập từ đầu).
+fill_default_cho_va_khop = true
+
+# % phân bổ qty (tổng = 100)
+default_ratio_layer_1 = 40
+default_ratio_layer_2 = 40
+default_ratio_layer_3 = 20
+
+# % SL (cắt lỗ) cho 3 lớp — tính từ entry price
+; LONG: SL_price = entry × (1 - rate/100) ;  SHORT: SL_price = entry × (1 + rate/100)
+default_sl_rate_layer_1 = 2
+default_sl_rate_layer_2 = 5
+default_sl_rate_layer_3 = 10
+
+# % TP (chốt lời) cho 3 lớp — tính từ entry price
+; LONG: TP_price = entry × (1 + rate/100) ;  SHORT: TP_price = entry × (1 - rate/100)
+default_tp_rate_layer_1 = 3
+default_tp_rate_layer_2 = 6
+default_tp_rate_layer_3 = 10
+
+# Cột S "Cho phép đặt lệnh" — mặc định N (user phải chủ động đổi sang Y để bot đặt lệnh)
+default_allow_order = N
+
+# ─── Bot ĐA KIỂU LỆNH (hd_order_multi.py) — chạy khi ORDER_BOT_MODE=multi ──────
+# Mỗi "leg" là 1 lệnh con:
+#   leg1 = LỆNH VÀO (lệnh 1)   |   leg2 = CẮT LỖ (SL)   |   leg3 = CHỐT LỜI (TP)
+#
+#   legN_role     : entry (mở vị thế) | exit (đóng, reduce_only)
+#   legN_source   : tab nguồn — dat_lenh ("ĐẶT LỆNH 100 MÃ") | cho_va_khop ("Chờ và khớp")
+#                   (bỏ trống = tự chọn: entry→dat_lenh, exit→cho_va_khop)
+#   legN_type     : kiểu CỐ ĐỊNH — limit | market | stop_market | stop_limit | trailing
+#   legN_type_col : (tùy chọn) CỘT chứa mã kiểu để đổi kiểu THEO TỪNG DÒNG (1..5)
+#   legN_col      : cột giá chính (market không cần)
+#   legN_aux      : cột phụ — CHỈ cần cho stop_limit (giá limit) / trailing (callback%)
+#   legN_pct_col  : (chỉ leg exit) cột % vị thế đóng — bỏ trống = đóng 100%
+# Khối lượng: leg VÀO dùng full vốn; leg SL/TP đóng 100% vị thế.
+#
+# ── CỘT CẦN CÓ TRÊN SHEET (bản tối giản) ─────────────────────────────────────
+# Tab "ĐẶT LỆNH (100 MÃ)":  A=Mã  B=Đòn bẩy  D=Giá vào  F=Mã kiểu VÀO(1-5)  G=Phụ VÀO  H=Vốn
+#     ⚠️ Cột C giữ nguyên (callback của bot trailing cũ). KHÔNG dùng I→Z
+#        (hd_track_30_prices.py ghi đè 18 mốc giá vào I:Z).
+# Tab "Chờ và khớp":  KHÔNG cần thêm cột — dùng cột có sẵn:
+#     N = Giá SL      O = Giá TP      P = ĐẶT LỆNH (gõ Y mới đặt)
+#     Điều kiện đặt SL/TP: cột D (ĐÃ KHỚP)='Y' VÀ cột P (ĐẶT LỆNH)='Y'.
+#     Để trống ô giá (N hoặc O) → bot bỏ qua lệnh đó cho dòng ấy.
+#
+# ── VÌ SAO SL/TP ĐỌC TỪ TAB "Chờ và khớp" ────────────────────────────────────
+# Tab "ĐẶT LỆNH" là danh sách ứng viên (top tăng/giảm) thay đổi liên tục — mã đã
+# khớp sẽ biến mất khỏi đó. Tab "Chờ và khớp" mới là nơi theo dõi vị thế THỰC TẾ.
+# ── RẢI LỆNH / DCA (nhiều lệnh VÀO cho cùng 1 mã) ────────────────────────────
+# false (mặc định): 1 mã chỉ vào 1 lần — có vị thế rồi thì KHÔNG đặt thêm lệnh vào.
+# true : cho phép đặt THÊM lệnh vào dù mã đã có vị thế → dùng khi muốn
+#        "mua thêm nếu giá giảm / bán thêm nếu giá tăng" (rải nhiều mức giá).
+#   ⚠️ Mỗi lệnh vào dùng TRỌN vốn (cột H). Rải 3 lệnh = 3× vốn → chia nhỏ cột H!
+allow_dca = false
+
+# ── BẢO VỆ VỊ THẾ KHI RẢI LỆNH (vị thế tăng dần) ────────────────────────────
+# true : lệnh CẮT LỖ dùng cờ closePosition của Binance — tự đóng TOÀN BỘ vị thế
+#        khi chạm giá, không gắn khối lượng. Rải thêm lệnh làm vị thế tăng thì
+#        SL vẫn bảo vệ đủ, không cần đặt lại (KHÔNG có khoảng trống mất SL).
+#        ⚠️ Luôn đóng 100%, không đóng từng phần được.
+exit_sl_close_position = true
+
+# true : lệnh CHỐT LỜI (Limit) sẽ được HỦY & ĐẶT LẠI khi khối lượng vị thế đổi,
+#        để chốt đúng toàn bộ vị thế hiện có.
+exit_tp_resize = true
+
+# Khối lượng lệch quá bao nhiêu %% thì mới coi là cần đặt lại (tránh hủy/đặt liên tục).
+exit_resize_tolerance_pct = 1.0
+
+# Dung sai coi 2 lệnh là "trùng giá" khi chống lặp đơn (đơn vị: %).
+# 0.02 = hai lệnh chênh dưới 0.02% mới bị coi là trùng.
+# Đặt quá lớn (vd 0.2) sẽ GỘP NHẦM các lệnh rải sát nhau → chỉ vào được 1 lệnh.
+dedup_price_tolerance_pct = 0.02
+
+multi_leg_count = 3
+
+# Leg 1 — LỆNH VÀO: tab ĐẶT LỆNH, kiểu chọn theo dòng ở cột F, giá cột D, phụ cột G
+# Cột G BẮT BUỘC vì cột F cho chọn cả mã 4 (Stop Limit) và 5 (Trailing) — 2 kiểu này
+# cần tham số thứ 2. Các mã 1/2/3 thì để trống G.
+leg1_role = entry
+leg1_source = dat_lenh
+leg1_type_col = F
+leg1_col = D
+leg1_aux = G
+
+# Leg 2 — CẮT LỖ (SL): tab Chờ và khớp, kiểu CỐ ĐỊNH stop_market, giá cột N
+# (Stop Market = đảm bảo khớp khi cắt lỗ — quan trọng nhất lúc thua lỗ)
+leg2_role = exit
+leg2_source = cho_va_khop
+leg2_type = stop_market
+leg2_col = N
+
+# Leg 3 — CHỐT LỜI (TP): tab Chờ và khớp, kiểu CỐ ĐỊNH limit, giá cột O
+# (Limit = chốt đúng giá mong muốn)
+leg3_role = exit
+leg3_source = cho_va_khop
+leg3_type = limit
+leg3_col = O
+
+# ── MỞ RỘNG khi cần (không bắt buộc) ─────────────────────────────────────────
+# • Muốn SL/TP đổi kiểu theo từng dòng → thêm cột mã kiểu rồi khai:
+#     leg2_type_col = R      (thay cho leg2_type)
+# • Muốn TP dùng Trailing Stop → cần thêm cột callback%:
+#     leg3_type = trailing
+#     leg3_aux  = V          (cột chứa callback %)
+# • Muốn đóng từng phần (TP đóng 50%) → thêm cột % rồi khai:
+#     leg3_pct_col = W
+
+# ─── Telegram Command Bot (điều khiển từ xa: /stop, /pause, /long, /short...) ───
+# Mặc định false: nếu không khai báo run_tele_command thì bot KHÔNG chạy listener (chỉ scan sheet).
+run_tele_command = false
+
+# Chế độ nhiều sheet (1 bot, 1 nhóm, nhiều folder/sheet): chỉ 1 folder đặt true và cấu hình bên dưới.
+; tele_multi_sheet = false
+; tele_slugs = A, B, C
+; tele_sheet_A_id = <spreadsheet_id_của_sheet_A>
+; tele_sheet_A_tab = ĐẶT LỆNH (100 MÃ)
+; tele_sheet_B_id = <spreadsheet_id_của_sheet_B>
+; tele_sheet_B_tab = ĐẶT LỆNH (100 MÃ)
+; tele_sheet_C_id = <spreadsheet_id_của_sheet_C>
+; tele_sheet_C_tab = ĐẶT LỆNH (100 MÃ)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# CÁC TÀI KHOẢN (bỏ dấu ; để bật — nhớ khai tên vào `accounts` ở [global])
+# ══════════════════════════════════════════════════════════════════════════════
+# CHỈ được khai thông tin NHẬN DẠNG tài khoản:
+#     key_binance, secret_binance     (Binance)
+#     spreadsheet_id                  (Google Sheet)
+#     chat_id, bot_token, prefix_channel   (Telegram)
+#     key_name                        (tên hiển thị)
+#
+# ⛔ KHÔNG được khai tham số vận hành (delay_*, allow_dca, legN_*, rate…) ở đây.
+#    Chúng phải nằm ở [global] để MỌI tài khoản chạy đồng nhất — dễ kiểm soát,
+#    dễ hỗ trợ. Khai sai, bot dừng và chỉ rõ dòng cần chuyển lên [global].
+#
+# (Trường hợp thật sự cần ngoại lệ, khai ở [global]:
+#      account_extra_keys = delay_vao_lenh, allow_dca )
+#
+# ⚠️ Google: tất cả sheet dùng CHUNG 1 tài khoản Google (chung credentials.json
+#    + token.json). Sheet của từng khách phải được share cho tài khoản Google đó.
+
+; [kh_a]
+; key_binance    = <API key của khách A>
+; secret_binance = <API secret của khách A>
+; spreadsheet_id = <ID Google Sheet của khách A>
+; chat_id        = -1001111111111
+; key_name       = Khach A
+
+; [kh_b]
+; key_binance    = <API key của khách B>
+; secret_binance = <API secret của khách B>
+; spreadsheet_id = <ID Google Sheet của khách B>
+; chat_id        = -1002222222222
+; key_name       = Khach B

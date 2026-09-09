@@ -1,0 +1,28 @@
+# ==============================================================================
+# QBot (bản gọn) — thư viện cần cài
+#
+#   pip install -r requirements.txt
+#
+# Danh sách này soát từ import THỰC TẾ trong 19 file .py của thư mục này.
+# Đã bỏ so với bản cũ: pandas, gspread, oauth2client, pytz, python-dateutil,
+# pyinstaller (build .exe KHÔNG làm bot nhanh hay nhẹ hơn — cùng bytecode,
+# cùng thư viện nạp vào RAM; bản one-file còn khởi động chậm hơn).
+# ==============================================================================
+
+# ── Binance ─────────────────────────────────────────────────────────────────
+ccxt>=4.0.0                          # đặt lệnh, đọc vị thế, giá thị trường
+
+# ── Google Sheets ───────────────────────────────────────────────────────────
+google-api-python-client>=2.100.0    # googleapiclient
+google-auth>=2.23.0                  # google.oauth2, google.auth
+google-auth-httplib2>=0.1.1
+google-auth-oauthlib>=1.1.0          # luồng OAuth tạo token.json
+
+# ── Telegram ────────────────────────────────────────────────────────────────
+python-telegram-bot>=20.0            # gửi thông báo, lệnh điều khiển từ xa
+
+# ── Khác ────────────────────────────────────────────────────────────────────
+requests>=2.31.0                     # gọi REST Binance trực tiếp
+numpy>=1.24.0                        # gg_sheet_factory dùng 1 chỗ (lọc NaN)
+                                     # ⚠️ Bỏ được nếu tối ưu gg_sheet_factory —
+                                     #    numpy đang bị nạp vào MỌI bot

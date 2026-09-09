@@ -1,0 +1,21 @@
+# ⛔ BÍ MẬT — TUYỆT ĐỐI KHÔNG ĐƯA LÊN GIT
+config.ini
+config.ini.*
+!config.ini.example
+credentials.json
+token.json
+*.key
+*.secret
+
+# Dữ liệu chạy
+logs/
+pids/
+data/
+order/
+
+# Rác Python / hệ điều hành
+__pycache__/
+.pytest_cache/
+*.py[cod]
+.DS_Store
+Thumbs.db
