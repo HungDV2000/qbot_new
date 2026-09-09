@@ -272,6 +272,11 @@ echo "▶ BOT NGOÀI start_all_bots.sh (chạy tay) — kiểm tra khởi độn
 echo "────────────────────────────────────────────────────────────"
 export QBOT_ACCOUNT=kh_a
 for B in hd_order_market_price hd_cancel_selective; do
+    # Bản gọn không kèm các bot đã nghỉ — bỏ qua thay vì báo lỗi
+    if [ ! -f "$B.py" ]; then
+        echo "  ⏭️  $B — không có trong bản gọn (bot đã nghỉ)"
+        continue
+    fi
     KQ=$(python3 - "$B" <<'PY2'
 import subprocess, sys, time, re
 b = sys.argv[1]

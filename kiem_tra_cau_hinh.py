@@ -42,13 +42,22 @@ def main():
         print(f"   Phiên bản      : {cst.config_sheet_version or '(trống)'}")
 
     accs = cst.accounts
+    loi_global = 0
     if not accs:
         print("\n⚠️  Không khai tài khoản nào → chế độ 1 tài khoản (dùng [global])")
+        # Chế độ 1 tài khoản: key nằm thẳng ở [global], phải kiểm ở đây —
+        # nếu không sẽ báo "hợp lệ" cho một config rỗng, bot bật lên mới chết.
+        for k in ('key_binance', 'secret_binance', 'spreadsheet_id'):
+            if not cst.config.get('global', k, fallback='').strip():
+                print(f"   ❌ [global] THIẾU {k}")
+                loi_global += 1
+        if not loi_global:
+            print("   ✅ [global] có đủ key_binance / secret_binance / spreadsheet_id")
         accs = []
 
     print(f"\n👥 {len(accs)} tài khoản: {', '.join(accs) if accs else '(không có)'}")
 
-    loi = 0
+    loi = loi_global
     for ten in accs:
         that = cst.resolve_section(ten) if hasattr(cst, 'resolve_section') else ten
         print("\n" + "─" * 72)
