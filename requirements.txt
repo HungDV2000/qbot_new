@@ -4,7 +4,7 @@
 #   pip install -r requirements.txt
 #
 # Danh sách này soát từ import THỰC TẾ trong 19 file .py của thư mục này.
-# Đã bỏ so với bản cũ: pandas, gspread, oauth2client, pytz, python-dateutil,
+# Đã bỏ so với bản cũ: pandas, numpy, gspread, oauth2client, pytz, python-dateutil,
 # pyinstaller (build .exe KHÔNG làm bot nhanh hay nhẹ hơn — cùng bytecode,
 # cùng thư viện nạp vào RAM; bản one-file còn khởi động chậm hơn).
 # ==============================================================================
@@ -23,6 +23,3 @@ python-telegram-bot>=20.0            # gửi thông báo, lệnh điều khiển
 
 # ── Khác ────────────────────────────────────────────────────────────────────
 requests>=2.31.0                     # gọi REST Binance trực tiếp
-numpy>=1.24.0                        # gg_sheet_factory dùng 1 chỗ (lọc NaN)
-                                     # ⚠️ Bỏ được nếu tối ưu gg_sheet_factory —
-                                     #    numpy đang bị nạp vào MỌI bot

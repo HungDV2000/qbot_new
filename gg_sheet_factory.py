@@ -14,7 +14,6 @@ tab_dat_lenh = cst.tab_dat_lenh
 
 import os.path
 import math
-import numpy as np
 
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
@@ -599,12 +598,6 @@ def update_single_value_to_sheet(sheet_spreadsheet_id: str, sheet_tab_name: str,
   return execute_with_retry(_execute)
 
 
-def replace_nan(array, replace_value):
-    nan_indices = np.isnan(array)
-    array[nan_indices] = replace_value
-    return array
-
-
 def sanitize_for_google_sheets(value):
   """
   Google Sheets API JSON không chấp nhận NaN/Infinity (payload invalid).
@@ -616,7 +609,11 @@ def sanitize_for_google_sheets(value):
     return value
   if isinstance(value, bool):
     return value
-  if isinstance(value, np.generic):
+  # Số kiểu numpy (np.float64, np.int64...) có .item() để đưa về số Python.
+  # Nhận diện bằng TÊN MODULE thay vì isinstance(value, np.generic) để KHÔNG
+  # phải import numpy — file này được MỌI bot nạp, mà numpy tốn ~30-40MB mỗi
+  # tiến trình (5 bot × 3 tài khoản = 15 tiến trình).
+  if type(value).__module__.split('.')[0] == 'numpy':
     try:
       value = value.item()
     except Exception:
