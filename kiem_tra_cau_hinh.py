@@ -12,6 +12,7 @@ import os
 import sys
 
 os.environ.setdefault('QBOT_NO_LOCK', '1')     # không giành khoá của bot đang chạy
+os.environ['QBOT_CHE_DO_SOAT'] = '1'          # xem mọi tài khoản, không bắt chọn 1 tài khoản
 
 
 def _ngan(v, n=14):

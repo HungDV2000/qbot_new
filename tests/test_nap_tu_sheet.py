@@ -111,6 +111,27 @@ class TestNapTuSheet(unittest.TestCase):
                     acc="q2pub")
         self.assertIn("SL=5", out, f"tham số lớp bị chặn hoặc không áp:\n{out[:600]}")
 
+    def test_kiem_tra_cau_hinh_xem_duoc_moi_tai_khoan_khong_can_chon(self):
+        """Lỗi trên VPS: kiem_tra_cau_hinh báo "Chưa chọn tài khoản… Đặt QBOT_ACCOUNT"
+        dù tài khoản khai đúng trên sheet tổng. Công cụ soát phải xem MỌI tài khoản."""
+        for f in ("kiem_tra_cau_hinh.py", "giu_cua_so.py"):
+            shutil.copy(QBOT / f, self.d / f)
+        env = dict(os.environ, QBOT_CONFIG=str(self.d / "config.ini"), QBOT_GIU_CUA_SO="0")
+        env.pop("QBOT_ACCOUNT", None); env.pop("QBOT_CHE_DO_SOAT", None)
+        r = subprocess.run([sys.executable, "kiem_tra_cau_hinh.py"], cwd=self.d, env=env,
+                           capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
+        out = r.stdout + r.stderr
+        self.assertNotIn("Chưa chọn tài khoản", out, f"🔴 công cụ soát bắt chọn tài khoản:\n{out[:800]}")
+        self.assertIn("[q2pri]", out); self.assertIn("[q2pub]", out)
+        self.assertIn("Cấu hình hợp lệ", out, out[-800:])
+        self.assertEqual(r.returncode, 0)
+
+    def test_chay_file_khac_khong_chon_tai_khoan_bao_dung_nguon(self):
+        out = _chay(self.d, "import cst\n")
+        self.assertIn("Chưa chọn tài khoản", out)
+        self.assertIn("Sheet tổng", out, "tài khoản khai ở sheet tổng — đừng báo là config.ini")
+        self.assertNotIn("config.ini đang khai", out)
+
     def test_bao_ro_nguon_cau_hinh(self):
         out = _chay(self.d, "import cst\n")
         self.assertIn("Nạp từ sheet tổng", out)

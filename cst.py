@@ -378,6 +378,8 @@ def _run_for_all_accounts(entry_file):
 
 # ── Tài khoản đang chạy ─────────────────────────────────────────────────────
 account = os.environ.get('QBOT_ACCOUNT', '').strip()
+# kiem_tra_cau_hinh đặt cờ này: xem MỌI tài khoản mà không chạy tài khoản nào
+CHE_DO_SOAT = os.environ.get('QBOT_CHE_DO_SOAT', '').strip() == '1'
 
 if account:
     _that = resolve_section(account)
@@ -471,11 +473,15 @@ elif accounts:
     _entry_file = os.path.basename(_sys_argv0 or '')
     if _entry_file.startswith('hd_') and _entry_file.endswith('.py'):
         _run_for_all_accounts(_entry_file)      # spawn + trông coi, xong thì thoát
+    elif CHE_DO_SOAT:
+        pass    # kiem_tra_cau_hinh: xem MỌI tài khoản, không chạy tài khoản nào
     else:
+        _nguon = (f"Sheet tổng (tab '{bot_id}')" if nap_tu_sheet else config_file)
         raise SystemExit(
             f"❌ Chưa chọn tài khoản.\n"
-            f"   {config_file} đang khai {len(accounts)} tài khoản: {', '.join(accounts)}\n"
-            f"   Đặt QBOT_ACCOUNT=<tên> rồi chạy lại."
+            f"   {_nguon} đang có {len(accounts)} tài khoản: {', '.join(accounts)}\n"
+            f"   Bật bot bằng file hd_*.py (tự chạy cho mọi tài khoản đang Bật),\n"
+            f"   hoặc đặt QBOT_ACCOUNT=<tên> để chạy riêng 1 tài khoản."
         )
 
 # Tên dùng cho log/thư mục. Không có tài khoản → 'default' (giữ đường dẫn cũ).
@@ -629,7 +635,9 @@ key_name = config.get('global', 'key_name', fallback='') or account_name
 key_binance = config.get('global', 'key_binance', fallback='').strip()
 secret_binance = config.get('global', 'secret_binance', fallback='').strip()
 spreadsheet_id = config.get('global', 'spreadsheet_id', fallback='').strip()
-if not (key_binance and secret_binance and spreadsheet_id):
+# Chế độ soát có nhiều tài khoản: chưa chọn tài khoản nào nên [global] không có
+# key — kiem_tra_cau_hinh tự soát key của TỪNG tài khoản.
+if not (key_binance and secret_binance and spreadsheet_id) and not (CHE_DO_SOAT and accounts):
     raise SystemExit(
         f"❌ Chưa có API key / Google Sheet cho tài khoản '{account_name}'.\n"
         f"   qbot_new lấy thông tin tài khoản từ SHEET TỔNG — khai trong {config_file}:\n"
