@@ -333,6 +333,17 @@ def tim_tai_khoan(bang, ten):
 _LENH_DANG_NHAP = "dang_nhap_google.py"
 
 
+def _dang_nhap(thu_muc):
+    """Mở trình duyệt đăng nhập Google, ghi token.json. Lỗi → LoiSheetCauHinh."""
+    try:
+        import dang_nhap_google
+        dang_nhap_google.dang_nhap(thu_muc)
+    except Exception as e:
+        raise LoiSheetCauHinh(
+            f"Đăng nhập Google không xong: {e}\n"
+            f"   Thử lại bằng cách bấm đúp {_LENH_DANG_NHAP}.")
+
+
 def _co_nguoi_ngoi_may():
     """Có người trước bàn phím để đăng nhập trên trình duyệt không.
     Tiến trình con của điều phối / chạy nền thì KHÔNG — mở trình duyệt sẽ treo."""
@@ -350,6 +361,7 @@ def _lay_service():
     """Dựng service Google Sheets bằng token.json / credentials.json cạnh file này."""
     from google.oauth2.credentials import Credentials
     from google.auth.transport.requests import Request
+    from google.auth.exceptions import RefreshError
     from googleapiclient.discovery import build
 
     thu_muc = os.path.dirname(os.path.abspath(__file__))
@@ -369,30 +381,31 @@ def _lay_service():
                 f"Chưa đăng nhập Google (không có {token_path}).\n"
                 f"   Bấm đúp {_LENH_DANG_NHAP} (hoặc: python {_LENH_DANG_NHAP}) để đăng nhập 1 lần.")
         print("🔑 Chưa có token.json → mở trình duyệt đăng nhập Google (chỉ 1 lần)...", flush=True)
-        try:
-            import dang_nhap_google
-            dang_nhap_google.dang_nhap(thu_muc)
-        except Exception as e:
-            raise LoiSheetCauHinh(
-                f"Đăng nhập Google không xong: {e}\n"
-                f"   Thử lại bằng cách bấm đúp {_LENH_DANG_NHAP}.")
-    try:
-        creds = Credentials.from_authorized_user_file(token_path, SCOPES)
-    except Exception as e:
-        raise LoiSheetCauHinh(
-            f"token.json hỏng: {e}\n   Bấm đúp {_LENH_DANG_NHAP} để đăng nhập lại.")
+        _dang_nhap(thu_muc)
 
-    if creds and creds.expired and creds.refresh_token:
+    # Token hỏng / bị Google thu hồi → có người trước máy thì TỰ đăng nhập lại 1 lần.
+    # Lỗi MẠNG lúc làm mới token thì KHÔNG bắt đăng nhập — chỉ là mạng chập chờn.
+    for lan in (1, 2):
         try:
-            creds.refresh(Request())
+            creds = Credentials.from_authorized_user_file(token_path, SCOPES)
+            if creds and creds.expired and creds.refresh_token:
+                creds.refresh(Request())
+            loi = None if (creds and creds.valid) else "token không còn hiệu lực"
+        except RefreshError as e:
+            loi = f"Google từ chối token ({e})"
+        except (ValueError, KeyError) as e:
+            loi = f"token.json hỏng ({e})"
         except Exception as e:
-            raise LoiSheetCauHinh(
-                f"Không làm mới được token Google: {e}\n"
-                f"   Bấm đúp {_LENH_DANG_NHAP} để đăng nhập lại.")
-
-    if not creds or not creds.valid:
+            raise LoiDocSheet(f"Không làm mới được token Google (mạng?): {e}")
+        if loi is None:
+            break
+        if lan == 1 and os.path.exists(cred_path) and _co_nguoi_ngoi_may():
+            print(f"🔑 {loi} → mở trình duyệt đăng nhập lại...", flush=True)
+            _dang_nhap(thu_muc)
+            continue
         raise LoiSheetCauHinh(
-            f"Token Google không dùng được. Bấm đúp {_LENH_DANG_NHAP} để đăng nhập lại.")
+            f"Token Google không dùng được: {loi}\n"
+            f"   Bấm đúp {_LENH_DANG_NHAP} để đăng nhập lại.")
 
     return build('sheets', 'v4', credentials=creds, cache_discovery=False)
 

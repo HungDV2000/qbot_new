@@ -19,8 +19,16 @@ Có **6 bot**, bật **riêng từng cái** được. Mỗi bot tự chạy cho 
    Credentials → OAuth client ID loại **Desktop app** → Download JSON).
 3. **Đăng nhập Google 1 lần**: bấm đúp `dang_nhap_google.py`. Trình duyệt mở ra →
    chọn tài khoản Google **đã được chia sẻ quyền Editor** các sheet → Cho phép.
-   Xong sẽ có `token.json`, mọi bot dùng chung. (Quên bước này thì
-   `kiem_tra_cau_hinh.py` / bot mở bằng tay cũng tự mở trình duyệt đăng nhập.)
+   Xong sẽ có `token.json`, mọi bot dùng chung.
+
+   **Đăng nhập là tự động:** quên bước này thì bật bot (hoặc `kiem_tra_cau_hinh.py`)
+   cũng tự mở trình duyệt đăng nhập; token hỏng / bị Google thu hồi cũng tự mở lại.
+   Từ lần sau bot tự làm mới token, không phải đăng nhập nữa. Riêng bot chạy nền
+   (`start_bot.sh`) không mở được trình duyệt → chỉ báo "bấm đúp dang_nhap_google.py".
+
+   ⚠️ Trên Google Cloud Console → **OAuth consent screen**, nếu ứng dụng đang ở
+   trạng thái **Testing** thì Google **thu hồi token sau 7 ngày** → mỗi tuần bot
+   đòi đăng nhập lại. Bấm **Publish app** (chuyển sang *In production*) để hết.
 4. Soát cấu hình — không đặt lệnh, không đụng tiền:
    ```
    python kiem_tra_cau_hinh.py

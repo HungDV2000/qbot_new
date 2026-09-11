@@ -15,9 +15,31 @@ QBOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(QBOT))
 
 
+class RefreshError(Exception):
+    pass
+
+
 class _Creds:
-    def __init__(self, valid=True): self.valid, self.expired, self.refresh_token = valid, False, None
+    """Nội dung token.json quyết định trạng thái: HONG / HET_HAN / MANG_LOI / khác = tốt."""
+    def __init__(self, kieu="tot"):
+        self.kieu = kieu
+        self.valid = kieu == "tot"
+        self.expired = kieu in ("HET_HAN", "MANG_LOI")
+        self.refresh_token = "r" if self.expired else None
+
+    def refresh(self, req):
+        if self.kieu == "HET_HAN":
+            raise RefreshError("invalid_grant: Token has been expired or revoked.")
+        raise OSError("mất mạng")
+
     def to_json(self): return json.dumps({"token": "T"})
+
+
+def _doc_token(path, scopes):
+    txt = open(path).read()
+    if txt == "HONG":
+        raise ValueError("không phải JSON")
+    return _Creds(txt if txt in ("HET_HAN", "MANG_LOI") else "tot")
 
 
 def _gia_google():
@@ -26,7 +48,9 @@ def _gia_google():
                 "googleapiclient", "google_auth_oauthlib"):
         mods[ten] = types.ModuleType(ten)
     c = types.ModuleType("google.oauth2.credentials")
-    c.Credentials = types.SimpleNamespace(from_authorized_user_file=lambda p, s: _Creds())
+    c.Credentials = types.SimpleNamespace(from_authorized_user_file=_doc_token)
+    ex = types.ModuleType("google.auth.exceptions"); ex.RefreshError = RefreshError
+    mods["google.auth.exceptions"] = ex
     r = types.ModuleType("google.auth.transport.requests"); r.Request = object
     d = types.ModuleType("googleapiclient.discovery"); d.build = lambda *a, **k: "SERVICE"
     fl = types.ModuleType("google_auth_oauthlib.flow")
@@ -107,6 +131,37 @@ class TestDangNhap(unittest.TestCase):
     def test_da_co_token_thi_khong_dang_nhap_lai(self):
         (self.d / "token.json").write_text("{}")
         self.assertEqual(self.sc._lay_service(), "SERVICE")
+        self.assertEqual(self.Flow.goi, 0)
+
+    # ── Token cũ hỏng / bị thu hồi → tự đăng nhập lại ─────────────────────────
+    def _co_token(self, noi_dung):
+        (self.d / "credentials.json").write_text("{}")
+        (self.d / "token.json").write_text(noi_dung)
+
+    def test_token_hong_thi_tu_dang_nhap_lai(self):
+        self._co_token("HONG")
+        with mock.patch.object(self.sc, "_co_nguoi_ngoi_may", lambda: True):
+            self.assertEqual(self.sc._lay_service(), "SERVICE")
+        self.assertEqual(self.Flow.goi, 1)
+
+    def test_token_bi_google_thu_hoi_thi_tu_dang_nhap_lai(self):
+        self._co_token("HET_HAN")
+        with mock.patch.object(self.sc, "_co_nguoi_ngoi_may", lambda: True):
+            self.assertEqual(self.sc._lay_service(), "SERVICE")
+        self.assertEqual(self.Flow.goi, 1)
+
+    def test_mat_mang_luc_lam_moi_KHONG_bat_dang_nhap(self):
+        self._co_token("MANG_LOI")
+        with mock.patch.object(self.sc, "_co_nguoi_ngoi_may", lambda: True):
+            with self.assertRaises(self.sc.LoiDocSheet):
+                self.sc._lay_service()
+        self.assertEqual(self.Flow.goi, 0, "mạng chập chờn mà bắt đăng nhập lại là phiền vô ích")
+
+    def test_token_hong_luc_chay_nen_thi_bao_cach_lam(self):
+        self._co_token("HET_HAN")
+        with mock.patch.object(self.sc, "_co_nguoi_ngoi_may", lambda: False):
+            msg = self._loi()
+        self.assertIn("dang_nhap_google.py", msg)
         self.assertEqual(self.Flow.goi, 0)
 
 
