@@ -130,7 +130,7 @@ if nap_tu_sheet:
             config.add_section(_ten)
         for _k, _v in _muc.items():
             if _k.startswith('__'):
-                continue          # __ten__, __bat__, __lop__ là cột điều khiển
+                continue          # __ten__, __bat__ là cột điều khiển
             # '%' phải nhân đôi, nếu không configparser hiểu là chuỗi thay thế
             config.set(_ten, _k, str(_v).replace('%', '%%'))
     config.set('global', 'accounts', ', '.join(_bang_tk.keys()))

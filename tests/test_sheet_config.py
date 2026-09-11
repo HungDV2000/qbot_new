@@ -29,6 +29,19 @@ class TestTachDuLieu(unittest.TestCase):
         self.assertEqual(a["default_sl_rate_layer_1"], "2")
         self.assertEqual(a["default_tp_rate_layer_1"], "3")
 
+    def test_cot_Lop_cu_bi_bo_qua(self):
+        """Sheet cũ còn cột "Lớp" → không sinh ra tham số nào, không làm hỏng gì."""
+        _, bang = sc.phan_tich_bang(BANG_MAU)      # BANG_MAU vẫn có cột "Lớp"
+        for ten, muc in bang.items():
+            with self.subTest(tk=ten):
+                # So khớp CHÍNH XÁC: default_sl_rate_layer_1 là tham số hợp lệ,
+                # chỉ bắt các khoá sinh ra từ cột "Lớp".
+                self.assertFalse([k for k in muc if k in ("__lop__", "lop", "layer", "lớp")],
+                                 "cột Lớp lọt thành tham số")
+                self.assertEqual(muc["default_sl_rate_layer_1"],
+                                 {"q2pri": "2", "q2pub": "5", "q3fu": "10"}[ten],
+                                 "cột %SL ngay sau cột Lớp phải đọc đúng")
+
     def test_tieu_de_khong_dau_van_hieu(self):
         b = [r[:] for r in BANG_MAU]
         b[1] = ["Tai khoan", "Bat", "Api Key", "API SECRET", "sheet id", "Chat ID", "Lop", "% SL", "% TP"]

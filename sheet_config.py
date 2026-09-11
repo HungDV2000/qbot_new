@@ -26,12 +26,15 @@ BỐ CỤC SHEET TỔNG — mỗi bot MỘT TAB, tên tab đặt đúng bằng b
 
 Ví dụ:
 
-    |   | A         | B   | C       | D          | E        | F       | G   | H   | I   |
-    | 1 | PHIÊN BẢN | 7   |         |            |          |         |     |     |     |
-    | 2 | Tài khoản | Bật | API Key | API Secret | Sheet ID | Chat ID | Lớp | %SL | %TP |
-    | 3 | q2pri     | Y   | abc...  | xyz...     | 1AA...   | -100    | 1   | 2   | 3   |
-    | 4 | q2pub     | Y   | def...  | uvw...     | 1BB...   | -100    | 2   | 5   | 6   |
-    | 5 | q3fu      | N   | ghi...  | rst...     | 1CC...   | -100    | 3   | 10  | 10  |
+    |   | A         | B   | C       | D          | E        | F       | G   | H   |
+    | 1 | PHIÊN BẢN | 7   |         |            |          |         |     |     |
+    | 2 | Tài khoản | Bật | API Key | API Secret | Sheet ID | Chat ID | %SL | %TP |
+    | 3 | q2pri     | Y   | abc...  | xyz...     | 1AA...   | -100    | 2   | 3   |
+    | 4 | q2pub     | Y   | def...  | uvw...     | 1BB...   | -100    | 5   | 6   |
+    | 5 | q3fu      | N   | ghi...  | rst...     | 1CC...   | -100    | 10  | 10  |
+
+    Số LỚP = số dòng đang Bật (mỗi tài khoản chạy đúng 1 lớp). Không có cột
+    "Lớp" — sheet cũ còn cột đó thì bot tự bỏ qua.
 
 TIÊU ĐỀ CỘT: dùng nhãn tiếng Việt ở bảng NHAN_COT bên dưới, HOẶC ghi thẳng
 tên tham số như trong config.ini (vd `allow_dca`). Cách hai cho phép thêm bất
@@ -62,8 +65,6 @@ NHAN_COT = {
     'tenhienthi':   'key_name',
     'keyname':      'key_name',
     'prefixchannel': 'prefix_channel',
-    'lop':          '__lop__',        # chỉ để ghi log cho dễ đọc
-    'layer':        '__lop__',
     'sl':           'default_sl_rate_layer_1',
     'tysl':         'default_sl_rate_layer_1',
     'tp':           'default_tp_rate_layer_1',

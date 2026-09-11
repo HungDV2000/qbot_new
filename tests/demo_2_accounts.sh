@@ -29,8 +29,10 @@ chmod +x ./*.sh
 
 # ── Config: 2 tài khoản, key/sheet KHÁC NHAU ─────────────────────────────────
 python3 - "$QBOT" <<'PY'
-import sys
+import sys, re
 src=open(sys.argv[1]+"/config.ini.example",encoding="utf-8").read()
+# Test chế độ ĐỌC FILE: ép tắt sheet tổng, không phụ thuộc ID điền trong file mẫu
+src = re.sub(r'(?m)^(bot_id|config_spreadsheet_id)\s*=.*$', r'\1 =', src)
 src=src.replace("[global]\n", "[global]\n" + "accounts = kh_a, kh_b\n",1)
 src+="""
 [kh_a]

@@ -31,13 +31,27 @@ chung nhóm với sheet đặt lệnh của khách.
 
 Đặt tên tab **đúng bằng mã bot**, ví dụ `QBOT01`.
 
-| | A | B | C | D | E | F | G | H | I |
-|---|---|---|---|---|---|---|---|---|---|
-| **1** | `PHIÊN BẢN` | `1` | | | | | | | |
-| **2** | Tài khoản | Bật | API Key | API Secret | Sheet ID | Chat ID | Lớp | %SL | %TP |
-| **3** | q2pri | Y | `abc…` | `xyz…` | `1AA…` | -100 | 1 | 2 | 3 |
-| **4** | q2pub | Y | `def…` | `uvw…` | `1BB…` | -100 | 2 | 5 | 6 |
-| **5** | q3fu | N | `ghi…` | `rst…` | `1CC…` | -100 | 3 | 10 | 10 |
+| | A | B | C | D | E | F | G | H |
+|---|---|---|---|---|---|---|---|---|
+| **1** | `PHIÊN BẢN` | `1` | | | | | | |
+| **2** | Tài khoản | Bật | API Key | API Secret | Sheet ID | Chat ID | %SL | %TP |
+| **3** | q2pri | Y | `abc…` | `xyz…` | `1AA…` | -100 | 2 | 3 |
+| **4** | q2pub | Y | `def…` | `uvw…` | `1BB…` | -100 | 5 | 6 |
+| **5** | q3fu | N | `ghi…` | `rst…` | `1CC…` | -100 | 10 | 10 |
+
+### Số lớp = số tài khoản đang Bật
+
+Mỗi tài khoản chạy **đúng 1 lớp**. Muốn 1 / 2 / 3 lớp thì để 1 / 2 / 3 dòng có
+**Bật = Y**. Không có cột "Lớp" — sheet cũ còn cột đó thì bot tự bỏ qua.
+
+Dù 1, 2 hay 3 lớp, vẫn chạy **cùng 5 bot** bằng `./start_all_bots.sh`. Mỗi bot tự
+mở một tiến trình con cho mỗi tài khoản đang Bật (3 lớp = 5 điều phối + 15 con).
+
+⚠️ **Mỗi lớp phải là MỘT TÀI KHOẢN BINANCE RIÊNG** (tài khoản phụ – sub-account
+cũng được), **không phải nhiều API key của cùng một tài khoản**. Nếu dùng chung
+một tài khoản: ba lệnh vào gộp thành **một vị thế**, và lệnh cắt lỗ của lớp 1
+(`closePosition`) sẽ **đóng luôn cả lớp 2 và 3**. Bot chặn được trùng y hệt một
+key, nhưng không nhận ra được hai key khác nhau cùng thuộc một tài khoản.
 
 **Dòng 1** — ô `B1` là **số phiên bản**. Sửa bất cứ ô nào bên dưới thì **phải
 đổi ô này** (tăng lên 1 chẳng hạn). Bot chỉ nhìn ô này để biết có thay đổi.
@@ -67,7 +81,6 @@ thiếu. Cố ý như vậy: tài khoản thiếu key sẽ dùng nhầm key củ
 |---|---|
 | **Bật** | `Y` = chạy, `N` = tạm ngưng. Bỏ trống = coi như `Y` |
 | **Chat ID** | Nhóm Telegram nhận thông báo |
-| **Lớp** | Chỉ để dễ đọc, bot không dùng |
 | **%SL** | % cắt lỗ tính từ giá vào |
 | **%TP** | % chốt lời tính từ giá vào |
 

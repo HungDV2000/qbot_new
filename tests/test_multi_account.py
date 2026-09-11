@@ -5,6 +5,7 @@ Chạy:  python3 tests/test_multi_account.py
        hoặc  pytest tests/test_multi_account.py -v
 """
 import configparser
+import re
 import os
 import shutil
 import subprocess
@@ -19,6 +20,8 @@ WORK = Path(tempfile.mkdtemp(prefix="qbot_multiacc_"))
 def _make_config(accounts="kh_a, kh_b", filename="config_test.ini"):
     """Tạo config test từ config.ini.example + 2 tài khoản."""
     src = (QBOT / "config.ini.example").read_text(encoding="utf-8")
+    # Test chế độ ĐỌC FILE: ép tắt sheet tổng, không phụ thuộc ID điền trong file mẫu
+    src = re.sub(r'(?m)^(bot_id|config_spreadsheet_id)\s*=.*$', r'\1 =', src)
     src = src.replace("[global]\n", "[global]\n" + f"accounts = {accounts}\n", 1)
     if not accounts.strip():
         # Chế độ 1 tài khoản đọc key thẳng ở [global]. Mẫu config.ini.example
@@ -112,6 +115,8 @@ def test_operational_params_are_shared():
 def test_account_section_rejects_operational_params():
     """Khai tham số vận hành trong khối tài khoản → CHẶN (giữ bot đồng nhất)."""
     src = (QBOT / "config.ini.example").read_text(encoding="utf-8")
+    # Test chế độ ĐỌC FILE: ép tắt sheet tổng, không phụ thuộc ID điền trong file mẫu
+    src = re.sub(r'(?m)^(bot_id|config_spreadsheet_id)\s*=.*$', r'\1 =', src)
     src = src.replace("[global]\n", "[global]\n" + "accounts = kh_y\n", 1)
     src += ("\n[kh_y]\nkey_binance=K\nsecret_binance=S\nspreadsheet_id=SH\n"
             "delay_vao_lenh = 120\nallow_dca = true\n")
@@ -127,6 +132,8 @@ def test_account_section_rejects_operational_params():
 def test_account_extra_keys_opens_exception():
     """Khai account_extra_keys ở [global] → cho phép ngoại lệ có kiểm soát."""
     src = (QBOT / "config.ini.example").read_text(encoding="utf-8")
+    # Test chế độ ĐỌC FILE: ép tắt sheet tổng, không phụ thuộc ID điền trong file mẫu
+    src = re.sub(r'(?m)^(bot_id|config_spreadsheet_id)\s*=.*$', r'\1 =', src)
     src = src.replace("[global]\n", "[global]\n" + "accounts = kh_z\naccount_extra_keys = delay_vao_lenh\n", 1)
     src += ("\n[kh_z]\nkey_binance=K\nsecret_binance=S\nspreadsheet_id=SH\n"
             "delay_vao_lenh = 120\n")
@@ -270,6 +277,8 @@ def _cfg_with_delay(value, filename):
     """delay đặt ở [global] (tham số vận hành — không được khai trong khối tài khoản)."""
     import re as _re
     src = (QBOT / "config.ini.example").read_text(encoding="utf-8")
+    # Test chế độ ĐỌC FILE: ép tắt sheet tổng, không phụ thuộc ID điền trong file mẫu
+    src = re.sub(r'(?m)^(bot_id|config_spreadsheet_id)\s*=.*$', r'\1 =', src)
     src = src.replace("[global]\n", "[global]\n" + "accounts = kh_x\n", 1)
     src = _re.sub(r"(?m)^delay_vao_lenh\s*=.*$", f"delay_vao_lenh = {value}", src, count=1)
     src += "\n[kh_x]\nkey_binance=K\nsecret_binance=S\nspreadsheet_id=SH\n"
@@ -414,6 +423,8 @@ def test_start_script_reads_accounts():
 def _cfg_with_partial_account(missing_keys, filename):
     """Tạo config có section thiếu một số khóa bắt buộc."""
     src = (QBOT / "config.ini.example").read_text(encoding="utf-8")
+    # Test chế độ ĐỌC FILE: ép tắt sheet tổng, không phụ thuộc ID điền trong file mẫu
+    src = re.sub(r'(?m)^(bot_id|config_spreadsheet_id)\s*=.*$', r'\1 =', src)
     src = src.replace("[global]\n", "[global]\n" + "accounts = kh_x\n", 1)
     lines = {"key_binance": "KEY_X", "secret_binance": "SEC_X", "spreadsheet_id": "SHEET_X"}
     for k in missing_keys:
@@ -447,6 +458,8 @@ def test_missing_spreadsheet_id_is_blocked():
 def test_account_not_in_list_is_blocked():
     """Tên có section nhưng chưa khai vào `accounts` → chặn (tránh gõ nhầm)."""
     src = (QBOT / "config.ini.example").read_text(encoding="utf-8")
+    # Test chế độ ĐỌC FILE: ép tắt sheet tổng, không phụ thuộc ID điền trong file mẫu
+    src = re.sub(r'(?m)^(bot_id|config_spreadsheet_id)\s*=.*$', r'\1 =', src)
     src = src.replace("[global]\n", "[global]\n" + "accounts = kh_a\n", 1)
     src += "\n[kh_a]\nkey_binance=KA\nsecret_binance=SA\nspreadsheet_id=SHA\n"
     src += "\n[kh_la]\nkey_binance=KL\nsecret_binance=SL\nspreadsheet_id=SHL\n"
