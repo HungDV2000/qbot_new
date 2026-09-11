@@ -176,7 +176,7 @@ python3 - "$QBOT" "$1" "$2" <<'PY'
 import sys, re
 qbot, sttl, rttl = sys.argv[1], sys.argv[2], sys.argv[3]
 src = open(qbot+"/config.ini.example", encoding="utf-8").read()
-src = src.replace("accounts =\n", "accounts = kh_a, kh_b, kh_c\n", 1)
+src = src.replace("[global]\n", "[global]\n" + "accounts = kh_a, kh_b, kh_c\n", 1)
 def setkey(s, k, v):
     if re.search(rf"(?m)^{k}\s*=", s):
         return re.sub(rf"(?m)^{k}\s*=.*$", f"{k} = {v}", s)

@@ -1,5 +1,11 @@
 # 👥 Hướng dẫn CHẠY NHIỀU TÀI KHOẢN trên 1 VPS
 
+> ⚠️ **CÁCH CŨ — khai tài khoản ngay trong `config.ini`.**
+> `qbot_new` giờ lấy danh sách tài khoản, API key và cấu hình từng tài khoản từ
+> **SHEET TỔNG** — xem **`HUONG_DAN_SHEET_TONG.md`**. `config.ini` chỉ còn thông số
+> chung của bot. Cách dưới đây vẫn chạy được (khi để trống `config_spreadsheet_id`),
+> giữ lại để tham khảo và gỡ lỗi.
+
 > Nhiều bộ (API key / secret / Google Sheet) chạy từ **cùng 1 thư mục code, cùng 1 file config**.
 > Không còn phải copy thư mục hay dựng nhiều VPS.
 

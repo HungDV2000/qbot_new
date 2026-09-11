@@ -120,9 +120,9 @@ class TestNoiVaoBot(unittest.TestCase):
         """Không được cắt ngang lúc vừa vào lệnh mà chưa đặt cắt lỗ."""
         import io
         src = io.open(os.path.join(QBOT, "hd_order_multi.py"), encoding="utf-8").read()
-        self.assertIn("config_watcher.co_thay_doi", src, "chưa nối bộ dò vào bot")
+        self.assertIn("config_watcher.ngu", src, "chưa nối bộ dò vào bot")
         i_quet = src.rindex("do_it()")
-        i_do = src.index("config_watcher.co_thay_doi")
+        i_do = src.index("config_watcher.ngu")
         self.assertLess(i_quet, i_do, "🔴 dò cấu hình phải nằm SAU do_it()")
 
     def test_cst_cho_truoc_khi_gianh_khoa(self):

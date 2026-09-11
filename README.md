@@ -15,7 +15,7 @@ Chép 3 file vào thư mục này (không có sẵn vì chứa thông tin riêng
 
 | File | Lấy ở đâu |
 |---|---|
-| `config.ini` | Chép từ `config.ini.example` rồi điền key thật |
+| `config.ini` | Chép từ `config.ini.example`, điền `bot_id` + `config_spreadsheet_id`. **API key để trên sheet tổng**, không để ở đây |
 | `credentials.json` | Google Cloud Console (OAuth Desktop app) |
 | `token.json` | Tự sinh lần chạy đầu, sau khi đăng nhập Google |
 
@@ -72,7 +72,7 @@ python3 hd_cancel_orders_schedule.py
 ```
 
 Chạy `python3 <bot>.py` mà **không đặt** `QBOT_ACCOUNT` thì bot tự chạy cho
-**tất cả** tài khoản khai trong `accounts`, mỗi tài khoản một tiến trình con.
+**tất cả** tài khoản đang Bật trên sheet tổng, mỗi tài khoản một tiến trình con.
 
 ---
 
@@ -121,22 +121,25 @@ Bấm **DỪNG** trên sheet vẫn có hiệu lực, chậm nhất sau 10 giây.
 
 Số đo thật với 3 tài khoản: **180 → 27 lượt/phút**.
 
-### Đa tài khoản
+### Tài khoản → SHEET TỔNG
+
+`config.ini` chỉ còn thông số **chung** của bot. Danh sách tài khoản, API key,
+Google Sheet riêng, %SL/%TP từng lớp… nằm trên **sheet tổng**:
 
 ```ini
-accounts = kh_a, kh_b, kh_c
+bot_id = QBOT01                   # tên tab trên sheet tổng dành cho máy này
+config_spreadsheet_id = 1AbC...   # ID sheet tổng
+config_reload_seconds = 300       # bao lâu dò ô phiên bản B1 một lần
 ```
 
-Mỗi tên ứng với một khối `[kh_a]` ở cuối file, **chỉ khai thông tin nhận dạng**:
-`key_binance`, `secret_binance`, `spreadsheet_id`, `chat_id`, `bot_token`,
-`prefix_channel`, `key_name`.
+Đổi key / thêm / tắt tài khoản ngay trên sheet rồi **đổi ô B1** — bot tự xác minh
+và nạp lại, không cần vào VPS. Dữ liệu sửa dở (key cụt, trùng key giữa hai tài
+khoản, gõ chữ vào ô số…) thì bot **giữ nguyên cấu hình đang chạy** và báo Telegram.
 
-⛔ Tham số vận hành (`delay_*`, `leg*`, `allow_dca`…) phải ở `[global]` để mọi
-tài khoản chạy đồng nhất. Khai sai chỗ, bot dừng và chỉ rõ dòng cần chuyển.
+Chi tiết: **`HUONG_DAN_SHEET_TONG.md`** (mục 8: sheet bị sửa đột ngột).
 
-Tên khối **không phân biệt hoa/thường** (`[q2Fu]` khớp với `q2fu`), nhưng nếu
-có hai khối chỉ khác hoa/thường thì bot **dừng** thay vì đoán — đoán sai nghĩa
-là đặt lệnh bằng key của khách khác.
+⚠️ `test_mode` đã bỏ khỏi config — nó **chưa bao giờ có tác dụng**, đặt `true`
+bot vẫn đặt lệnh thật.
 
 Mỗi tài khoản có `logs/<tên>`, `data/<tên>`, `pids/<tên>` riêng.
 
@@ -216,6 +219,8 @@ Bản đầy đủ của chúng nằm ở `qbot_setup/` và `qbot_setup/backup/`
 | Không tìm thấy section `[tên]` | Khai trong `accounts` nhưng thiếu khối tương ứng, hoặc lệch hoa/thường |
 | Vào lệnh nhưng không có SL/TP | `hd_update_cho_va_khop` không chạy |
 | Đặt lệnh trùng | Hai thư mục bot cùng chạy chung API key. Khoá chống trùng chỉ có tác dụng trong từng thư mục |
+| Telegram báo *"GIỮ NGUYÊN cấu hình đang chạy"* | Dữ liệu mới trên sheet có lỗi (xem tin nhắn). Sửa rồi **đổi ô B1 thêm lần nữa** |
+| Sửa sheet mà bot không đổi | Quên đổi ô B1 |
 
 Log nằm ở `logs/<tài_khoản>/<tên_bot>.log`, lỗi ở `logs/<tài_khoản>/error.log`.
 

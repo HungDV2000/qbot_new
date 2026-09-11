@@ -1,6 +1,7 @@
 import ccxt
 from binance_futures_direct import resync_exchange_time  # [Fix1] chống clock drift -1021
 import cst
+import config_watcher
 from pathlib import Path
 import time
 import telegram_factory
@@ -375,7 +376,7 @@ cancel_orders_scheduled()
 # Sau đó chạy theo interval
 while True:
     try:
-        time.sleep(cst.cancel_orders_minutes * 60)  # Chuyển phút thành giây
+        config_watcher.ngu(cst.cancel_orders_minutes * 60)  # Chuyển phút thành giây
         resync_exchange_time(exchange)  # [Fix1] chống clock drift -> hết -1021
         cancel_orders_scheduled()
     except KeyboardInterrupt:
@@ -387,7 +388,7 @@ while True:
             resync_exchange_time(exchange, min_interval=0)  # [Fix4] ép resync ccxt ngay
         print(f"❌ Lỗi trong vòng lặp cancel orders: {e}", flush=True)
         logger.error(f"Lỗi trong vòng lặp cancel orders: {e}", exc_info=True)
-        time.sleep(60)  # Chờ 1 phút trước khi thử lại
+        config_watcher.ngu(60)  # Chờ 1 phút trước khi thử lại
 
 print("👋 Bot đã dừng", flush=True)
 logger.info("Bot đã dừng")

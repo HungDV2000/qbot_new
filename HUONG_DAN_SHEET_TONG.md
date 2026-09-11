@@ -152,3 +152,76 @@ bằng cấu hình cũ** thay vì chết — để không mất giám sát vị 
 **Sheet đọc lỗi thì bot dừng hẳn**, không dùng giá trị dự phòng — theo yêu cầu:
 thà không chạy còn hơn chạy bằng key cũ mà tưởng đã đổi. Lệnh SL/TP đã đặt lên
 Binance **vẫn nằm nguyên trên sàn** khi bot dừng.
+
+---
+
+## 8. Sheet bị sửa ĐỘT NGỘT / sửa DỞ — bot làm gì
+
+Nguyên tắc: **bot không bao giờ tự nạp vào một cấu hình hỏng.** Thấy ô B1 đổi, bot
+đang chạy đọc trọn cấu hình mới và **soát trước**; chỉ khi ổn mới nạp lại. Có lỗi
+thì **giữ nguyên cấu hình đang chạy** và báo Telegram.
+
+Bot chỉ nạp lại lúc đang **nghỉ giữa hai vòng quét** — không bao giờ cắt ngang lúc
+vừa vào lệnh mà chưa kịp đặt cắt lỗ.
+
+| Tình huống trên sheet | Bot làm gì |
+|---|---|
+| Đổi API key hợp lệ của 1 tài khoản | Bot **thử đăng nhập Binance bằng key mới trước**, được thì **chỉ tài khoản đó** khởi động lại. Tài khoản khác chạy tiếp, không bị động tới |
+| Đang dán key thì bot đọc (key cụt, dính khoảng trắng) | Giữ nguyên key đang chạy + báo *"dán thiếu?"* |
+| Key mới **không đăng nhập được** Binance (sai secret, chưa bật Futures, chưa thêm IP VPS) | Giữ nguyên + báo *"KHÔNG đăng nhập được Binance"* |
+| Chép dòng quên sửa → **hai tài khoản trùng API key** hoặc **trùng Sheet ID** | Giữ nguyên + báo *"ĐẶT LỆNH TRÙNG"*. Trùng key = hai tiến trình cùng giao dịch một tài khoản |
+| Gõ `2,5` (dấu phẩy kiểu Việt) | Hiểu là `2.5` |
+| Gõ chữ vào ô số, %SL/%TP ngoài khoảng 0–100, tên cột sai (`D1` thay vì `D`) | Giữ nguyên + báo rõ ô nào sai |
+| Cột **Bật** gõ `Không` | Tắt tài khoản. *(Bản cũ hiểu nhầm `Không` là BẬT.)* Giá trị lạ như `tạm dừng` → báo lỗi, không đoán |
+| **Thêm** một dòng tài khoản | Tự mở bot cho tài khoản mới trong vòng `config_reload_seconds` |
+| **Tắt / xoá** một dòng tài khoản | Bot của tài khoản đó tự dừng và không bật lại |
+| Ô B1 là **công thức tự đổi** (`NOW()`, `RAND()`…) | Vừa khởi động chưa đủ 2 phút thì chưa nạp + báo. **Hãy gõ số tay** vào B1 |
+| Google chập chờn đúng lúc bot dò | Bỏ qua, thử lại lần dò sau |
+| Sheet tổng đọc lỗi **lúc bật bot** | **Dừng hẳn** — không có cấu hình nào đáng tin để chạy |
+
+**Sau khi bot báo lỗi**: sửa trên sheet rồi **đổi ô B1 thêm lần nữa**. Bot ghi nhớ
+phiên bản đã báo lỗi và không đọc lại nó.
+
+### ⚠️ Đổi sang key của TÀI KHOẢN BINANCE KHÁC
+
+Nếu key mới thuộc **một tài khoản Binance khác** (không phải key mới của cùng tài
+khoản), các vị thế và lệnh đang mở ở tài khoản cũ sẽ **không còn bot nào quản lý**
+— không cập nhật SL/TP, không huỷ lệnh treo. Bot gửi cảnh báo mỗi lần phát hiện
+đổi key. Nên **đóng hết vị thế ở tài khoản cũ trước khi đổi**.
+
+---
+
+## 9. Hai cách chạy bot
+
+**Chế độ sheet tổng** (`config_spreadsheet_id` có khai) — cách khuyên dùng:
+
+```bash
+./start_all_bots.sh
+```
+
+Mỗi bot là **một tiến trình điều phối**, tự mở tiến trình con cho từng tài khoản
+đang Bật trên sheet. Cấu hình đổi thì con xin nạp lại, điều phối bật lại con; có
+tài khoản mới thì điều phối tự mở. `./status.sh` hiện cả điều phối lẫn con;
+`./stop_all_bots.sh` dừng sạch cả hai.
+
+**Chạy lẻ 1 tài khoản** (gỡ lỗi): `QBOT_ACCOUNT=kh_a python3 hd_order_multi.py`.
+Đổi cấu hình thì bot tự mở tiến trình mới rồi thoát, và ghi đè `pids/kh_a/*.pid`
+để `stop_all_bots.sh` vẫn dừng được.
+
+---
+
+## 10. config.ini bây giờ chỉ còn thông số CHUNG
+
+Đã bỏ khỏi `config.ini.example` các tham số **không bot nào trong bản gọn dùng** —
+để lại chỉ gây nhầm:
+
+| Tham số bỏ | Vì sao |
+|---|---|
+| `test_mode` | ⚠️ **Không có tác dụng gì** — không bot nào đọc. Đặt `true` tưởng là chạy thử, thực tế **vẫn đặt lệnh thật** |
+| `key_binance`, `secret_binance`, `spreadsheet_id`, `key_name`, `accounts`, các khối `[kh_a]` | Thông tin tài khoản → **sheet tổng** |
+| `lenh2_*`, `lenh3_*`, `delay_vao_lenh_123` | Của `hd_order_123` — đã nghỉ |
+| `delay_update_price`, `price_column` | Của `hd_update_price` — đã nghỉ |
+| `delay_track_30_prices`, `delay_periodic_report` | Của 2 bot đã nghỉ |
+| `is_print_mode`, `time_gap_do_it`, `max_increase_decrease_4h_day_count`, `debug_column_audit_symbol`, `profile_do_it`, `default_ratio_layer_*` | Không bot nào đọc |
+
+Config cũ còn các dòng này vẫn chạy bình thường — bot chỉ bỏ qua chúng.

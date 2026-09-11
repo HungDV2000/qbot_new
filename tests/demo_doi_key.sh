@@ -27,6 +27,12 @@ cp "$QBOT"/cst.py "$QBOT"/rate_guard.py "$QBOT"/symbol_filter.py \
    "$QBOT"/config_watcher.py "$QBOT"/sheet_config.py .
 mv sheet_config.py sheet_config_that.py
 
+# Binance giả: key bắt đầu bằng HONG thì đăng nhập thất bại
+cat > binance_futures_direct.py <<'EOF'
+def futures_signed_request(*a, api_key=None, **k):
+    return None if (api_key or '').startswith('HONG') else {}
+EOF
+
 # Sheet tổng giả: đọc từ file, sửa file = sửa sheet
 cat > trang_thai.txt <<'EOF'
 1|KEY_CU
@@ -34,7 +40,7 @@ EOF
 
 cat > sheet_config.py <<'EOF'
 import io
-class LoiSheetCauHinh(Exception): pass
+from sheet_config_that import LoiSheetCauHinh, LoiDocSheet, tim_tai_khoan
 def _doc():
     pb, key = io.open("trang_thai.txt", encoding="utf-8").read().strip().split("|")
     return pb, key
@@ -69,16 +75,13 @@ print(f"KHOI_DONG pid={os.getpid()} key={cst.key_binance} pb={cst.config_sheet_v
       flush=True)
 while True:
     print(f"QUET pid={os.getpid()} key={cst.key_binance}", flush=True)
-    doi, moi = config_watcher.co_thay_doi(cst.bot_id, cst.config_spreadsheet_id, 2)
-    if doi:
-        config_watcher.khoi_dong_lai(f"phiên bản → {moi}", nha_khoa=cst.nha_khoa)
-    time.sleep(1)
+    config_watcher.ngu(1)   # đi đúng đường thật: nghỉ + dò + XÁC MINH rồi mới nạp
 EOF
 
 echo ""
 echo "▶ BƯỚC 1 — Bật bot, nạp key từ sheet"
 echo "────────────────────────────────────────────"
-QBOT_ACCOUNT=kh_a nohup python3 hd_giadinh.py > bot.log 2>&1 &
+QBOT_ACCOUNT=kh_a QBOT_MIN_RESTART_GAP=0 nohup python3 hd_giadinh.py > bot.log 2>&1 &
 sleep 4
 grep -q "key=KEY_CU" bot.log && ok "Nạp đúng KEY_CU từ sheet tổng" || ng "Không nạp được key"
 PID1=$(grep -o "KHOI_DONG pid=[0-9]*" bot.log | head -1 | grep -o "[0-9]*")

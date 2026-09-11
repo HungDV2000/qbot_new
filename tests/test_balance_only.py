@@ -115,8 +115,8 @@ def _dung_hop_cat(them_config=""):
     d = Path(tempfile.mkdtemp(prefix="qbot_bal_"))
     # hd_update_price.py là bot ĐÃ NGHỈ — bản gọn (qbot_new) không chép nó,
     # nên chỉ copy file nào thực sự có.
-    for f in ("cst.py", "rate_guard.py", "symbol_filter.py",
-              "hd_update_all.py", "hd_update_price.py"):
+    for f in ("cst.py", "rate_guard.py", "symbol_filter.py", "config_watcher.py",
+              "sheet_config.py", "hd_update_all.py", "hd_update_price.py"):
         if (QBOT / f).exists():
             shutil.copy(QBOT / f, d / f)
     for ten, noi_dung in MOCKS.items():

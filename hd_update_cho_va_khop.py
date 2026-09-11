@@ -1,5 +1,6 @@
 import ccxt
 import cst
+import config_watcher
 import gg_sheet_factory
 import logging
 import time
@@ -1152,7 +1153,7 @@ while True:
         traceback.print_exc()
         print(f"⏳ Chờ {cst.delay_cho_va_khop}s trước khi thử lại...\n", flush=True)
     
-    time.sleep(cst.delay_cho_va_khop)
+    config_watcher.ngu(cst.delay_cho_va_khop)   # nghỉ + dò cấu hình trên sheet tổng
 
 print("👋 Bot đã dừng", flush=True)
 logger.info("Bot đã dừng")

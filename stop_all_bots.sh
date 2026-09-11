@@ -20,38 +20,58 @@ echo "========================================"
 # Xác định tài khoản cần dừng
 if [ ${#ARGS[@]} -gt 0 ]; then
     TARGETS=("${ARGS[@]}")
-elif [ -d pids ]; then
-    TARGETS=()
-    for d in pids/*/; do [ -d "$d" ] && TARGETS+=("$(basename "$d")"); done
-    [ ${#TARGETS[@]} -eq 0 ] && TARGETS=("")     # chế độ 1 tài khoản
 else
+    # Dừng tiến trình ĐIỀU PHỐI (pids/*.pid) TRƯỚC — nó tự dọn các tiến trình
+    # con. Sau đó quét từng thư mục tài khoản cho sạch.
     TARGETS=("")
+    if [ -d pids ]; then
+        for d in pids/*/; do [ -d "$d" ] && TARGETS+=("$(basename "$d")"); done
+    fi
 fi
 
+# PID từ CẢ .pid lẫn .lock. Bot tự khởi động lại khi đổi cấu hình trên sheet
+# thì PID đổi; .lock luôn giữ PID của tiến trình đang chạy thật.
+_pids_in() {
+    local d="$1" f
+    for f in "$d"/*.pid "$d"/*.lock; do [ -f "$f" ] && { cat "$f" 2>/dev/null; echo; }; done \
+        | grep -E '^[0-9]+$' | sort -u
+}
+
+# Chỉ giết tiến trình Python — tránh PID cũ đã bị hệ điều hành cấp lại cho
+# chương trình khác. Không xem được (vd ps của Git Bash không thấy tiến trình
+# Windows gốc) thì tin kill -0 như cũ.
+_la_bot() {
+    local out; out="$(ps -p "$1" 2>/dev/null | tail -n +2)"
+    [ -z "$out" ] && return 0
+    echo "$out" | grep -qi python
+}
+
 stop_one() {
-    local ACC="$1" PIDDIR LABEL n=0
-    if [ -z "$ACC" ]; then PIDDIR="pids"; LABEL="(1 tài khoản)"; else PIDDIR="pids/$ACC"; LABEL="[$ACC]"; fi
-    [ -d "$PIDDIR" ] || { echo "  ⏭️  $LABEL: không có tiến trình nào"; return; }
+    local ACC="$1" PIDDIR LABEL n=0 PID DS
+    if [ -z "$ACC" ]; then PIDDIR="pids"; LABEL="(điều phối / 1 tài khoản)"
+    else PIDDIR="pids/$ACC"; LABEL="[$ACC]"; fi
+    [ -d "$PIDDIR" ] || return
+    DS="$(_pids_in "$PIDDIR")"
+    [ -z "$DS" ] && return
 
     echo ""
     echo "▶ Dừng $LABEL"
-    for f in "$PIDDIR"/*.pid; do
-        [ -f "$f" ] || continue
-        local PID; PID="$(cat "$f")"
-        if kill -0 "$PID" 2>/dev/null; then
-            kill "$PID" 2>/dev/null && echo "  ✔ $(basename "$f" .pid) (PID $PID)"
-            n=$((n+1))
-        fi
-        rm -f "$f"
+    for PID in $DS; do
+        kill -0 "$PID" 2>/dev/null && _la_bot "$PID" && kill "$PID" 2>/dev/null \
+            && { echo "  ✔ PID $PID"; n=$((n+1)); }
+    done
+    sleep 4
+    # Lượt 2: bot có thể vừa tự khởi động lại và ghi PID mới trong lúc chờ
+    for PID in $(_pids_in "$PIDDIR"); do
+        kill -0 "$PID" 2>/dev/null && _la_bot "$PID" && kill "$PID" 2>/dev/null \
+            && { echo "  ✔ PID $PID (tiến trình vừa sinh lại)"; n=$((n+1)); }
     done
     sleep 2
-    # Buộc dừng nếu còn sót
-    for f in "$PIDDIR"/*.pid; do
-        [ -f "$f" ] || continue
-        local PID; PID="$(cat "$f")"
-        kill -0 "$PID" 2>/dev/null && kill -9 "$PID" 2>/dev/null && echo "  ⚠ buộc dừng PID $PID"
-        rm -f "$f"
+    for PID in $(_pids_in "$PIDDIR"); do
+        kill -0 "$PID" 2>/dev/null && _la_bot "$PID" && kill -9 "$PID" 2>/dev/null \
+            && echo "  ⚠ buộc dừng PID $PID"
     done
+    rm -f "$PIDDIR"/*.pid
     echo "  → Đã dừng $n tiến trình"
 }
 

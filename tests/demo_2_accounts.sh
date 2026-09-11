@@ -31,7 +31,7 @@ chmod +x ./*.sh
 python3 - "$QBOT" <<'PY'
 import sys
 src=open(sys.argv[1]+"/config.ini.example",encoding="utf-8").read()
-src=src.replace("accounts =\n","accounts = kh_a, kh_b\n",1)
+src=src.replace("[global]\n", "[global]\n" + "accounts = kh_a, kh_b\n",1)
 src+="""
 [kh_a]
 key_binance = KEY_CUA_A
@@ -168,6 +168,11 @@ echo "────────────────────────�
 ./status.sh 2>&1 | grep -E "👤|Đang chạy|TỔNG"
 RUN=$(./status.sh 2>&1 | grep -c "│  🟢")   # chỉ đếm dòng tiến trình
 [ "$RUN" -ge 2 ] && ok "Có tiến trình đang chạy cho cả 2 tài khoản ($RUN tiến trình)" || ng "Số tiến trình bất thường: $RUN"
+# Trước đây chỉ đòi "≥ 2 tiến trình sống" nên hd_order_multi chết cả 2 tài khoản
+# (NameError) mà vẫn báo đạt. Giờ đòi KHÔNG tiến trình nào chết.
+sleep 4
+DEAD=$(./status.sh 2>&1 | grep -c "ĐÃ CHẾT")
+[ "$DEAD" = "0" ] && ok "Không tiến trình nào chết" || ng "🔴 $DEAD tiến trình đã chết — xem logs/*/error.log"
 
 echo ""
 echo "▶ BƯỚC 4 — CHẶN khởi động TRÙNG"

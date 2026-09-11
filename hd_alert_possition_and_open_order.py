@@ -1,6 +1,7 @@
 import ccxt
 from binance_futures_direct import resync_exchange_time  # [Fix1] chống clock drift -1021
 import cst
+import config_watcher
 import gg_sheet_factory
 import logging
 import time
@@ -362,4 +363,4 @@ while True:
         import traceback
         traceback.print_exc()
 
-    time.sleep(cst.delay_calert_possition_and_open_order)
+    config_watcher.ngu(cst.delay_calert_possition_and_open_order)   # nghỉ + dò cấu hình

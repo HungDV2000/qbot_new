@@ -79,6 +79,14 @@ class LoiSheetCauHinh(Exception):
     """Không đọc/hiểu được sheet tổng. Bot phải DỪNG, không đoán."""
 
 
+class LoiDocSheet(LoiSheetCauHinh):
+    """Lỗi MẠNG / Google khi đọc sheet — thường tạm thời, nên thử lại sau.
+
+    Tách khỏi lỗi dữ liệu để bot đang chạy không đánh dấu nhầm một phiên bản
+    cấu hình là "hỏng" chỉ vì Google chập chờn đúng lúc đọc.
+    """
+
+
 def _chuan_hoa_nhan(s):
     """'Tài khoản' → 'taikhoan'. Bỏ dấu, viết thường, bỏ mọi ký tự không phải chữ/số."""
     s = str(s or '').strip().lower()
@@ -168,14 +176,44 @@ def phan_tich_bang(rows):
     return phien_ban, ket_qua
 
 
+GIA_TRI_BAT = {'y', 'yes', 'co', '1', 'true', 'x', 'on', 'bat'}
+GIA_TRI_TAT = {'n', 'no', 'khong', '0', 'false', 'off', 'tat'}
+
+
+def _hieu_bat_tat(gt):
+    """'Có'/'Y' → True, 'Không'/'N' → False, rỗng → None, lạ → ValueError."""
+    chuan = _chuan_hoa_nhan(gt)
+    if chuan == '':
+        return None
+    if chuan in GIA_TRI_BAT:
+        return True
+    if chuan in GIA_TRI_TAT:
+        return False
+    raise ValueError(gt)
+
+
 def loc_dang_bat(bang):
-    """Bỏ các tài khoản có cột 'Bật' = N. Không khai cột Bật = coi như bật."""
-    ra = {}
+    """
+    Bỏ các tài khoản có cột 'Bật' = tắt. Không khai / để trống = coi như bật.
+
+    ⚠️ Trước đây chỉ nhận N/NO/FALSE/0/TẮT là tắt — gõ "Không" (cách người Việt
+    hay gõ) lại bị hiểu là BẬT. Nay hiểu cả tiếng Việt có/không dấu, và giá trị
+    lạ (vd "tạm dừng") thì DỪNG thay vì đoán — đoán sai là bật nhầm tài khoản.
+    """
+    ra, la = {}, []
     for ten, muc in bang.items():
-        bat = str(muc.get('__bat__', 'Y')).strip().upper()
-        if bat in ('N', 'NO', 'FALSE', '0', 'TAT', 'TẮT'):
+        try:
+            bat = _hieu_bat_tat(muc.get('__bat__', ''))
+        except ValueError:
+            la.append(f"  • [{ten}] cột Bật = '{muc.get('__bat__')}'")
+            continue
+        if bat is False:
             continue
         ra[ten] = muc
+    if la:
+        raise LoiSheetCauHinh(
+            "Cột 'Bật' có giá trị không hiểu được:\n" + "\n".join(la)
+            + "\n   Chỉ dùng: Y / N (hoặc Có / Không). Để trống = bật.")
     return ra
 
 
@@ -191,6 +229,91 @@ def kiem_tra_du_khoa(bang):
             "Tài khoản thiếu thông tin bắt buộc trên sheet tổng:\n" + "\n".join(loi)
             + "\n   (Không cho chạy tiếp vì tài khoản thiếu key sẽ dùng nhầm key "
               "của tài khoản khác.)")
+
+
+KHOA_BAT_TAT = {'allow_dca', 'exit_sl_close_position', 'exit_tp_resize',
+                'fill_default_cho_va_khop', 'cancel_all_orders', 'run_tele_command'}
+
+
+def _so(v):
+    """'2,5' → 2.5 (dấu phẩy thập phân kiểu Việt). Không phải số → ValueError."""
+    t = str(v).strip().replace(' ', '')
+    if ',' in t and '.' not in t:
+        t = t.replace(',', '.')
+    try:
+        return float(t)
+    except ValueError:
+        raise ValueError("phải là SỐ")
+
+
+def _chuan_hoa_gia_tri(k, v):
+    """Kiểm + chuẩn hoá một ô theo loại tham số. Sai → ValueError kèm lý do."""
+    v = str(v).strip()
+    if k.startswith(('default_sl_rate', 'default_tp_rate')):
+        x = _so(v)
+        if not 0 < x < 100:
+            raise ValueError("phải là % trong khoảng 0 – 100 (vd 2 hoặc 2.5)")
+        return str(int(x)) if x == int(x) else repr(x)
+    if k.endswith('_pct'):
+        x = _so(v)
+        if x < 0:
+            raise ValueError("không được âm")
+        return repr(x)
+    if k.startswith('delay_') or k.endswith(('_minutes', '_seconds', '_sec')):
+        x = _so(v)
+        if x != int(x) or x < 1:
+            raise ValueError("phải là SỐ NGUYÊN dương")
+        return str(int(x))
+    if k.endswith(('_col', '_aux')):
+        u = v.upper()
+        if not re.fullmatch(r'[A-Z]{1,2}', u):
+            raise ValueError("phải là CHỮ CÁI tên cột, vd D hoặc AA")
+        return u
+    if k in KHOA_BAT_TAT or k == 'default_allow_order':
+        b = _hieu_bat_tat(v)
+        if b is None:
+            raise ValueError("đang để trống")
+        if k == 'default_allow_order':
+            return 'Y' if b else 'N'
+        return 'true' if b else 'false'
+    return v
+
+
+def kiem_tra_du_lieu(bang):
+    """
+    Soát dữ liệu từng ô — bắt các lỗi hay gặp khi SỬA DỞ trên sheet:
+      • API key dán thiếu / dính khoảng trắng
+      • hai tài khoản trùng API key hoặc trùng Sheet ID (chép dòng quên sửa)
+        → hai tiến trình cùng giao dịch MỘT tài khoản = ĐẶT LỆNH TRÙNG
+      • số gõ kiểu Việt "2,5", chữ trong ô số, tên cột sai
+    Chuẩn hoá tại chỗ ("2,5" → "2.5"). Có lỗi → LoiSheetCauHinh, không đoán.
+    """
+    loi = []
+    for ten, muc in bang.items():
+        for k in ('key_binance', 'secret_binance'):
+            v = muc.get(k, '')
+            co_trang = bool(re.search(r'\s', v))
+            if v and (co_trang or len(v) < 16):
+                them = ', có khoảng trắng' if co_trang else ''
+                loi.append(f"  • [{ten}] {k} trông không hợp lệ ({len(v)} ký tự{them}) — dán thiếu?")
+        for k in list(muc):
+            if k.startswith('__') or k in ('key_binance', 'secret_binance'):
+                continue
+            try:
+                muc[k] = _chuan_hoa_gia_tri(k, muc[k])
+            except ValueError as e:
+                loi.append(f"  • [{ten}] {k} = '{muc[k]}': {e}")
+    for khoa, nhan in (('key_binance', 'API Key'), ('spreadsheet_id', 'Sheet ID')):
+        gom = {}
+        for ten, muc in bang.items():
+            if muc.get(khoa):
+                gom.setdefault(muc[khoa], []).append(ten)
+        for ds in gom.values():
+            if len(ds) > 1:
+                loi.append(f"  • {nhan} DÙNG CHUNG bởi {', '.join(ds)} — hai tiến trình "
+                           f"sẽ cùng giao dịch MỘT tài khoản → ĐẶT LỆNH TRÙNG")
+    if loi:
+        raise LoiSheetCauHinh("Dữ liệu trên sheet tổng không hợp lệ:\n" + "\n".join(loi))
 
 
 def tim_tai_khoan(bang, ten):
@@ -248,7 +371,7 @@ def doc_o_phien_ban(spreadsheet_id, tab):
     except LoiSheetCauHinh:
         raise
     except Exception as e:
-        raise LoiSheetCauHinh(f"Không đọc được ô phiên bản '{tab}'!B1: {e}")
+        raise LoiDocSheet(f"Không đọc được ô phiên bản '{tab}'!B1: {e}")
 
 
 def doc_bang_tho(spreadsheet_id, tab):
@@ -261,24 +384,30 @@ def doc_bang_tho(spreadsheet_id, tab):
     except LoiSheetCauHinh:
         raise
     except Exception as e:
-        raise LoiSheetCauHinh(f"Không đọc được tab '{tab}' của sheet tổng: {e}")
+        raise LoiDocSheet(f"Không đọc được tab '{tab}' của sheet tổng: {e}")
 
 
-def nap(bot_id, spreadsheet_id):
-    """
-    Đọc trọn cấu hình cho một mã bot.
-
-    Trả về (phiên_bản, {tên: {tham_số: giá_trị}}) — đã lọc tài khoản tắt và
-    đã kiểm tra đủ khoá bắt buộc.
-
-    Lỗi thì NÉM LoiSheetCauHinh để bot dừng hẳn. Theo quyết định của khách:
-    thà không chạy còn hơn chạy bằng cấu hình cũ mà tưởng là mới.
-    """
-    rows = doc_bang_tho(spreadsheet_id, bot_id)
+def nap_tu_bang(rows, bot_id=''):
+    """Bảng thô → (phiên_bản, tài khoản đang Bật) đã qua MỌI bước kiểm. Không gọi mạng."""
     phien_ban, bang = phan_tich_bang(rows)
     bang = loc_dang_bat(bang)
     if not bang:
         raise LoiSheetCauHinh(
             f"Tab '{bot_id}': không tài khoản nào đang Bật (cột 'Bật' đều là N)")
     kiem_tra_du_khoa(bang)
+    kiem_tra_du_lieu(bang)
     return phien_ban, bang
+
+
+def nap(bot_id, spreadsheet_id):
+    """
+    Đọc trọn cấu hình cho một mã bot.
+
+    Trả về (phiên_bản, {tên: {tham_số: giá_trị}}) — đã lọc tài khoản tắt, đã
+    kiểm đủ khoá bắt buộc và soát dữ liệu từng ô.
+
+    Lỗi thì NÉM LoiSheetCauHinh (lỗi mạng là LoiDocSheet — lớp con) để bot
+    dừng hẳn lúc khởi động. Theo quyết định của khách: thà không chạy còn hơn
+    chạy bằng cấu hình cũ mà tưởng là mới.
+    """
+    return nap_tu_bang(doc_bang_tho(spreadsheet_id, bot_id), bot_id)

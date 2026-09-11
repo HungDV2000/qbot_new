@@ -48,6 +48,15 @@ for ACC in $ACCOUNTS; do
             printf "│  🔴 %-34s ĐÃ CHẾT\n" "$NAME"; dead=$((dead+1))
         fi
     done
+    # Chế độ sheet tổng: mỗi bot là 1 tiến trình ĐIỀU PHỐI (pids/*.pid) trông
+    # các tiến trình con theo tài khoản. Liệt kê con qua file khoá của chúng.
+    if [ "$ACC" = "__single__" ]; then
+        for f in pids/*/*.lock; do
+            [ -f "$f" ] || continue
+            CACC="$(basename "$(dirname "$f")")"; NAME="$(basename "$f" .lock)"; PID="$(cat "$f")"
+            kill -0 "$PID" 2>/dev/null && printf "│    └ 🟢 [%s] %-28s PID %-8s\n" "$CACC" "$NAME" "$PID"
+        done
+    fi
     ERRSIZE=""
     [ -f "$LOGDIR/error.log" ] && ERRSIZE="  |  error.log: $(wc -c < "$LOGDIR/error.log" | tr -d ' ') bytes"
     echo "└─ Đang chạy: $run   Đã chết: $dead$ERRSIZE"

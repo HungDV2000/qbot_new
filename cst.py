@@ -232,29 +232,10 @@ def _run_for_all_accounts(entry_file):
     if stagger < 0:
         stagger = 0.0
 
-    procs = {}
-    for i, acc in enumerate(accounts):
-        if i > 0 and stagger > 0:
-            print(f"  ⏳ Chờ {stagger:.0f}s trước khi khởi động [{acc}] (tránh rate limit)...", flush=True)
-            time.sleep(stagger)
-        env = dict(os.environ, QBOT_ACCOUNT=acc, QBOT_CONFIG=config_file)
-        try:
-            p = subprocess.Popen(
-                [_sys_mod.executable, entry_file],
-                env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                # encoding='utf-8' BẮT BUỘC: tiến trình con ghi UTF-8, nếu để mặc
-                # định thì trên Windows cha giải mã bằng cp1252 → chữ Việt và emoji
-                # hiện thành "TÃ i khoáº£n" (mojibake).
-                text=True, encoding='utf-8', errors='replace', bufsize=1,
-            )
-        except Exception as e:
-            print(f"  ❌ Không mở được tiến trình cho [{acc}]: {e}", flush=True)
-            continue
-        procs[acc] = p
-        print(f"  ▶ [{acc}] đã khởi động (PID {p.pid})", flush=True)
+    from config_watcher import MA_NAP_LAI, MA_BI_TAT
 
-    if not procs:
-        raise SystemExit("❌ Không khởi động được tài khoản nào.")
+    procs = {}
+    da_biet = set()     # tài khoản đã mở — để nhận ra tài khoản MỚI thêm trên sheet
 
     def _relay(acc, proc):
         """In màn hình của tiến trình con, gắn tên tài khoản cho dễ theo dõi."""
@@ -264,16 +245,114 @@ def _run_for_all_accounts(entry_file):
         except Exception:
             pass
 
-    for acc, p in procs.items():
+    def _mo(acc):
+        # QBOT_SUPERVISED=1 báo cho con biết có điều phối trông. Cấu hình đổi thì
+        # con chỉ THOÁT với mã MA_NAP_LAI để điều phối bật lại — không tự đẻ
+        # tiến trình (tự đẻ thì điều phối mất dấu con; khi điều phối thoát, đường
+        # ống màn hình đứt làm con mới chết theo — đã tái hiện: 3 tiến trình → 0).
+        env = dict(os.environ, QBOT_ACCOUNT=acc, QBOT_CONFIG=config_file, QBOT_SUPERVISED='1')
+        try:
+            p = subprocess.Popen(
+                [_sys_mod.executable, entry_file],
+                env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                # encoding='utf-8' BẮT BUỘC: không có thì trên Windows cha giải mã
+                # bằng cp1252 → chữ Việt và emoji thành mojibake.
+                text=True, encoding='utf-8', errors='replace', bufsize=1,
+            )
+        except Exception as e:
+            print(f"  ❌ Không mở được tiến trình cho [{acc}]: {e}", flush=True)
+            return False
+        procs[acc] = p
+        da_biet.add(acc)
         threading.Thread(target=_relay, args=(acc, p), daemon=True).start()
+        print(f"  ▶ [{acc}] đã khởi động (PID {p.pid})", flush=True)
+        return True
+
+    def _doc_lai_danh_sach():
+        """Tài khoản đang Bật trên sheet tổng. Lỗi → None."""
+        if not nap_tu_sheet:
+            return None
+        try:
+            import sheet_config
+            _pb, _bang = sheet_config.nap(bot_id, config_spreadsheet_id)
+            return set(_bang)
+        except Exception as e:
+            print(f"  ⚠️ Không đọc lại được sheet tổng: {e}", flush=True)
+            return None
+
+    for i, acc in enumerate(accounts):
+        if i > 0 and stagger > 0:
+            print(f"  ⏳ Chờ {stagger:.0f}s trước khi khởi động [{acc}] (tránh rate limit)...", flush=True)
+            time.sleep(stagger)
+        _mo(acc)
+
+    if not procs:
+        raise SystemExit("❌ Không khởi động được tài khoản nào.")
+
+    # SIGTERM (lệnh `kill`, chính là cái stop_all_bots dùng) mặc định giết tiến
+    # trình NGAY, không chạy khối finally → các con bị bỏ lại chạy mồ côi (đã tái
+    # hiện). Đổi SIGTERM thành KeyboardInterrupt để dọn con giống như Ctrl+C.
+    import signal as _signal
+    def _nhan_sigterm(signum, frame):
+        raise KeyboardInterrupt
+    try:
+        _signal.signal(_signal.SIGTERM, _nhan_sigterm)
+    except Exception:
+        pass
+
+    # Điều phối tự dò ô B1 để mở tài khoản MỚI thêm trên sheet. (Tài khoản cũ
+    # tự lo: đổi thì tự xin nạp lại, bị tắt thì tự dừng.)
+    import config_watcher as _cw
+    _cw.khoi_tao(config_sheet_version)
+    try:
+        _chu_ky = config.getint('global', 'config_reload_seconds', fallback=300)
+    except Exception:
+        _chu_ky = 300
 
     try:
         while True:
             time.sleep(2)
+            xin_nap_lai = []
             for acc, p in list(procs.items()):
-                if p.poll() is not None:      # con đã thoát
-                    print(f"  ⚠️ [{acc}] đã dừng (mã thoát {p.returncode})", flush=True)
-                    procs.pop(acc, None)
+                rc = p.poll()
+                if rc is None:
+                    continue
+                procs.pop(acc, None)
+                if rc == MA_NAP_LAI:
+                    xin_nap_lai.append(acc)
+                    print(f"  🔄 [{acc}] nạp lại cấu hình từ sheet tổng", flush=True)
+                elif rc == MA_BI_TAT:
+                    da_biet.discard(acc)
+                    print(f"  ⏹ [{acc}] đã TẮT/XOÁ trên sheet — không bật lại", flush=True)
+                else:
+                    # Chết vì lỗi khác: KHÔNG tự bật lại (tự động bật lại khi
+                    # chết là quyết định để sau, theo khách).
+                    print(f"  ⚠️ [{acc}] đã dừng (mã thoát {rc})", flush=True)
+
+            if xin_nap_lai:
+                ds = _doc_lai_danh_sach()
+                if ds is None:
+                    ds = set(xin_nap_lai) | set(procs)   # đọc lỗi → bật lại đúng con vừa xin
+                for acc in xin_nap_lai:
+                    if acc in ds:
+                        _mo(acc)
+                    else:
+                        da_biet.discard(acc)
+                        print(f"  ⏹ [{acc}] không còn Bật trên sheet — không bật lại", flush=True)
+                for acc in sorted(ds - da_biet):
+                    print(f"  ➕ [{acc}] tài khoản MỚI trên sheet tổng — khởi động", flush=True)
+                    _mo(acc)
+
+            if nap_tu_sheet:
+                _doi, _moi = _cw.co_thay_doi(bot_id, config_spreadsheet_id, _chu_ky)
+                if _doi:
+                    ds = _doc_lai_danh_sach()
+                    if ds is not None:          # đọc lỗi → giữ phiên bản cũ, lần sau dò lại
+                        _cw.khoi_tao(_moi)
+                        for acc in sorted(ds - da_biet):
+                            print(f"  ➕ [{acc}] tài khoản MỚI trên sheet tổng — khởi động", flush=True)
+                            _mo(acc)
+
             if not procs:
                 print("  ℹ️ Tất cả tài khoản đã dừng.", flush=True)
                 break
@@ -467,6 +546,15 @@ def acquire_single_instance_lock(bot_name: str):
         print(f"⚠️ Không ghi được khoá {lock_file}: {e} — vẫn chạy tiếp", flush=True)
         return None
 
+    # Ghi luôn <bot>.pid = PID THẬT. start_all_bots / stop_all_bots / status theo
+    # dõi bằng file .pid. Bot tự khởi động lại (đổi cấu hình trên sheet) thì PID
+    # đổi — không ghi đè ở đây thì stop_all_bots giết nhầm PID cũ đã chết và KHÔNG
+    # dừng được bot đang chạy thật (đã tái hiện được lỗi này).
+    try:
+        (lock_dir / f'{bot_name}.pid').write_text(str(os.getpid()))
+    except OSError:
+        pass
+
     def _release():
         try:
             if lock_file.exists() and lock_file.read_text().strip() == str(os.getpid()):
@@ -510,8 +598,8 @@ def account_suffix() -> str:
     """Hậu tố gắn vào tên file riêng theo tài khoản ('' nếu chế độ 1 tài khoản)."""
     return f"_{account}" if account else ""
 
-is_print_mode = config.getboolean('global', 'is_print_mode')
-top_count = config.getint('global', 'top_count')
+# top_count chỉ dùng khi update_all_mode = full (dựng bảng top biến động)
+top_count = config.getint('global', 'top_count', fallback=50)
 
 # ── Chọn mã lấy dữ liệu (xem symbol_filter.py) ──────────────────────────────
 #   symbol_mode = all   → top biến động như cũ (top_count)
@@ -522,20 +610,23 @@ symbol_list, _symbol_trung = symbol_filter.read_symbol_list(config)
 for _goc, _chuan in _symbol_trung:
     print(f"⚠️  symbol_list: '{_goc}' trùng với mã đã khai ({_chuan}) — bỏ qua.", flush=True)
 
-# Cột ghi giá của hd_update_price. Mặc định C = "Giá trị hiện thời".
-# TRƯỚC ĐÂY ghi nhầm vào cột Y (= "% đến BB1h dưới" của hd_update_all),
-# khiến hai bot ghi đè lên nhau mỗi vòng.
-price_column = (config.get('global', 'price_column', fallback='C') or 'C').strip().upper()
-time_gap_do_it = config.getint('global', 'time_gap_do_it')
-bot_token = config.get('global', 'bot_token')
-chat_id = config.get('global', 'chat_id')
+# Telegram: khai chung ở [global] làm mặc định; sheet tổng ghi đè được theo tài khoản
+bot_token = config.get('global', 'bot_token', fallback='')
+chat_id = config.get('global', 'chat_id', fallback='')
 prefix_channel = config.get('global', 'prefix_channel', fallback='')
 
-key_name = config.get('global', 'key_name')
-key_binance = config.get('global', 'key_binance')
-secret_binance = config.get('global', 'secret_binance')
-test_mode = config.getboolean('global', 'test_mode')
-spreadsheet_id = config.get('global', 'spreadsheet_id')
+# Thông tin TÀI KHOẢN — lấy từ sheet tổng (hoặc [global] nếu không dùng sheet)
+key_name = config.get('global', 'key_name', fallback='') or account_name
+key_binance = config.get('global', 'key_binance', fallback='').strip()
+secret_binance = config.get('global', 'secret_binance', fallback='').strip()
+spreadsheet_id = config.get('global', 'spreadsheet_id', fallback='').strip()
+if not (key_binance and secret_binance and spreadsheet_id):
+    raise SystemExit(
+        f"❌ Chưa có API key / Google Sheet cho tài khoản '{account_name}'.\n"
+        f"   qbot_new lấy thông tin tài khoản từ SHEET TỔNG — khai trong {config_file}:\n"
+        f"       bot_id = <tên tab trên sheet tổng>\n"
+        f"       config_spreadsheet_id = <ID sheet tổng>\n"
+        f"   (Xem HUONG_DAN_SHEET_TONG.md)")
 tab_dat_lenh = config.get('global', 'tab_dat_lenh')
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -581,45 +672,21 @@ def _get_time_setting(key, minimum=1, warn_below=None, warn_above=None, unit='gi
 
 
 delay_vao_lenh = _get_time_setting('delay_vao_lenh', minimum=1, warn_below=15, warn_above=3600)
-delay_vao_lenh_123 = _get_time_setting('delay_vao_lenh_123', minimum=1, warn_below=15)
 delay_cho_va_khop = _get_time_setting('delay_cho_va_khop', minimum=1, warn_below=30)
-delay_update_price = _get_time_setting('delay_update_price', minimum=1, warn_below=15)
 delay_update_all = _get_time_setting('delay_update_all', minimum=1, warn_below=15)
 delay_calert_possition_and_open_order = _get_time_setting('delay_calert_possition_and_open_order', minimum=1, warn_below=15)
 
-lenh2_rate_long = config.getfloat('global', 'lenh2_rate_long')
-lenh2_rate_short = config.getfloat('global', 'lenh2_rate_short')
-lenh3_rate_long = config.getfloat('global', 'lenh3_rate_long')
-lenh3_rate_short = config.getfloat('global', 'lenh3_rate_short')
-lenh3_callback_rate = config.getfloat('global', 'lenh3_callback_rate')
-# O trống / NGAY → TP trailing kích hoạt ngay tại giá mark/last (phương án A)
-lenh3_o_empty_immediate = config.getboolean('global', 'lenh3_o_empty_immediate', fallback=True)
 cancel_orders_minutes = _get_time_setting('cancel_orders_minutes', minimum=1, unit='phút')
-max_increase_decrease_4h_day_count = config.getint('global', 'max_increase_decrease_4h_day_count')
-
-# Phase 3 & 4 delays
-delay_track_30_prices = _get_time_setting('delay_track_30_prices', minimum=1, warn_below=15)
-delay_periodic_report = _get_time_setting('delay_periodic_report', minimum=1, warn_below=30)
 
 # Telegram command bot: True = folder này chạy listener (nhận lệnh); False = chỉ chạy hd_order, không nhận lệnh
 # Mặc định False: nếu config.ini chưa có run_tele_command thì không chạy (tránh bật nhầm)
 run_tele_command = config.getboolean('global', 'run_tele_command', fallback=False)
 
-# hd_update_all: ghi logs/column_audit_LAST.json (+ file theo timestamp) cho đúng 1 mã — để đối chiếu từng cột (để trống = tắt)
-debug_column_audit_symbol = config.get('global', 'debug_column_audit_symbol', fallback='').strip()
-
-# hd_update_all: ghi log [PROFILE] thời gian từng phase (fetch_tickers, batch get_row, sheet…). false = log gọn hơn
-profile_do_it = config.getboolean('global', 'profile_do_it', fallback=True)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # [TASK 1] Default values cho sheet "Chờ và khớp" (cột J-S)
 # Tất cả đều có fallback cứng — file config.ini cũ vẫn chạy được.
 # ─────────────────────────────────────────────────────────────────────────────
-
-# % phân bổ qty theo 3 lớp (tổng phải = 100, mặc định 40/40/20)
-default_ratio_layer_1 = config.getfloat('global', 'default_ratio_layer_1', fallback=40.0)
-default_ratio_layer_2 = config.getfloat('global', 'default_ratio_layer_2', fallback=40.0)
-default_ratio_layer_3 = config.getfloat('global', 'default_ratio_layer_3', fallback=20.0)
 
 # % SL (cắt lỗ) cho 3 lớp — tính từ entry price
 # LONG: SL_price = entry × (1 - rate/100);  SHORT: SL_price = entry × (1 + rate/100)

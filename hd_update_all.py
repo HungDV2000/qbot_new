@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Any, List
 
 import cst
+import config_watcher
 import symbol_filter
 import gg_sheet_factory
 import requests
@@ -800,4 +801,4 @@ while True:
     if is_test_mode:
         break
     print(f"\n⏳ Chờ {cst.delay_update_all}s...\n", flush=True)
-    time.sleep(cst.delay_update_all)
+    config_watcher.ngu(cst.delay_update_all)

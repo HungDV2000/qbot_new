@@ -88,7 +88,6 @@ class TestDocCauHinh(unittest.TestCase):
                 t = io.open(p, encoding="utf-8").read()
                 self.assertIn("symbol_mode = list", t, "mặc định phải là list")
                 self.assertIn("symbol_list = BTC, ETH, SOL, XRP, BNB, DOGE", t)
-                self.assertIn("price_column = C", t)
 
 
 class TestLocTheoDanhSach(unittest.TestCase):

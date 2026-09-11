@@ -1,4 +1,5 @@
 import cst
+import config_watcher
 from enum import Enum
 import gg_sheet_factory
 import threading
@@ -1504,22 +1505,7 @@ if __name__ == "__main__":
             print(f"⏳ Chờ {cst.delay_vao_lenh} giây trước khi thử lại...", flush=True)
             sys.stdout.flush()
 
-        # ── Cấu hình trên sheet tổng đổi thì khởi động lại để nạp key mới ──
-        # Đặt Ở ĐÂY, SAU khi quét xong: không bao giờ cắt ngang lúc vừa đặt
-        # lệnh vào mà chưa kịp đặt cắt lỗ.
-        if getattr(cst, 'nap_tu_sheet', False):
-            try:
-                import config_watcher
-                _doi, _moi = config_watcher.co_thay_doi(
-                    cst.bot_id, cst.config_spreadsheet_id,
-                    cst.config.getint('global', 'config_reload_seconds', fallback=300))
-                if _doi:
-                    config_watcher.khoi_dong_lai(
-                        f"phiên bản cấu hình {config_watcher._phien_ban_dau} → {_moi}",
-                        nha_khoa=cst.nha_khoa)
-            except SystemExit:
-                raise
-            except Exception as _e:
-                print(f"⚠️ Dò cấu hình lỗi (bỏ qua, thử lại sau): {_e}", flush=True)
-
-        time.sleep(cst.delay_vao_lenh)
+        # Nghỉ tới vòng sau — TRONG LÚC NGHỈ dò cấu hình trên sheet tổng, đổi thì
+        # xác minh rồi nạp lại. Đặt SAU khi quét xong: không bao giờ cắt ngang
+        # lúc vừa vào lệnh mà chưa kịp đặt cắt lỗ.
+        config_watcher.ngu(cst.delay_vao_lenh)

@@ -41,6 +41,15 @@ PY
 
 if [ $# -gt 0 ]; then ACCOUNTS="$*"; else ACCOUNTS="$(read_accounts)"; fi
 
+# Chế độ SHEET TỔNG: danh sách tài khoản nằm trên Google Sheet, không nằm ở đây
+SHEET_MODE="$(python3 - "$CONFIG_FILE" <<'PY2'
+import configparser, sys
+c = configparser.ConfigParser(inline_comment_prefixes=(';',))
+c.read(sys.argv[1], encoding='utf-8')
+print('1' if c.get('global', 'config_spreadsheet_id', fallback='').strip() else '')
+PY2
+)"
+
 # Chống khởi động TRÙNG: 2 bộ bot cùng key = ĐẶT LỆNH TRÙNG
 is_running() {
     local PIDDIR="$1" f PID
@@ -90,7 +99,11 @@ start_account() {
     run_bot hd_cancel_orders_schedule.py          "Hủy lệnh treo quá lâu"
 }
 
-if [ -z "$ACCOUNTS" ]; then
+if [ -n "$SHEET_MODE" ] && [ $# -eq 0 ]; then
+    echo "📄 Chế độ SHEET TỔNG — mỗi bot là 1 tiến trình ĐIỀU PHỐI: tự mở tiến trình"
+    echo "   con cho từng tài khoản đang Bật trên sheet, và tự bật lại khi cấu hình đổi."
+    start_account ""; TOTAL=1
+elif [ -z "$ACCOUNTS" ]; then
     echo "ℹ️  Config không khai 'accounts' → chế độ 1 tài khoản"
     start_account ""; TOTAL=1
 else

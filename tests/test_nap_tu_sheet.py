@@ -136,6 +136,8 @@ class TestNapTuSheet(unittest.TestCase):
         cfg = (self.d / "config.ini").read_text(encoding="utf-8")
         cfg = cfg.replace("config_spreadsheet_id = SHEET_TONG", "")
         cfg = cfg.replace("key_binance =", "key_binance = TU_FILE")
+        cfg = cfg.replace("secret_binance =", "secret_binance = SEC_FILE")
+        cfg = cfg.replace("\nspreadsheet_id =", "\nspreadsheet_id = SHEET_FILE")
         (self.d / "config.ini").write_text(cfg, encoding="utf-8")
         out = _chay(self.d, "import cst\nprint('NGUON=' + ('sheet' if cst.nap_tu_sheet else 'file'))\n"
                             "print('K=' + cst.key_binance)\n")
