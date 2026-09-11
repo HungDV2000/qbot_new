@@ -15,8 +15,13 @@ Có **6 bot**, bật **riêng từng cái** được. Mỗi bot tự chạy cho 
    ```
    API key, sheet riêng, %SL/%TP của từng tài khoản đều nằm trên **sheet tổng**
    (xem `HUONG_DAN_SHEET_TONG.md`).
-2. `credentials.json` + `token.json` (đăng nhập Google lần đầu).
-3. Soát cấu hình — không đặt lệnh, không đụng tiền:
+2. Chép `credentials.json` vào thư mục bot (lấy ở Google Cloud Console →
+   Credentials → OAuth client ID loại **Desktop app** → Download JSON).
+3. **Đăng nhập Google 1 lần**: bấm đúp `dang_nhap_google.py`. Trình duyệt mở ra →
+   chọn tài khoản Google **đã được chia sẻ quyền Editor** các sheet → Cho phép.
+   Xong sẽ có `token.json`, mọi bot dùng chung. (Quên bước này thì
+   `kiem_tra_cau_hinh.py` / bot mở bằng tay cũng tự mở trình duyệt đăng nhập.)
+4. Soát cấu hình — không đặt lệnh, không đụng tiền:
    ```
    python kiem_tra_cau_hinh.py
    ```

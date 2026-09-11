@@ -13,7 +13,7 @@ QBOT = Path(__file__).resolve().parent.parent
 NHAC = "nhấn Enter để đóng"
 DIEM_VAO = ("hd_order_multi.py", "hd_update_cho_va_khop.py", "hd_alert_possition_and_open_order.py",
             "hd_cancel_selective.py", "hd_cancel_orders_schedule.py", "hd_update_all.py",
-            "kiem_tra_cau_hinh.py")
+            "kiem_tra_cau_hinh.py", "dang_nhap_google.py")
 
 
 def _hop_cat(*them):

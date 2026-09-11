@@ -43,6 +43,7 @@ kỳ tham số nào mà không phải sửa code.
 
 import os
 import re
+import sys
 
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 
@@ -329,6 +330,22 @@ def tim_tai_khoan(bang, ten):
 
 # ── Phần gọi mạng ───────────────────────────────────────────────────────────
 
+_LENH_DANG_NHAP = "dang_nhap_google.py"
+
+
+def _co_nguoi_ngoi_may():
+    """Có người trước bàn phím để đăng nhập trên trình duyệt không.
+    Tiến trình con của điều phối / chạy nền thì KHÔNG — mở trình duyệt sẽ treo."""
+    if os.environ.get('QBOT_SUPERVISED', '') == '1':
+        return False
+    if os.environ.get('QBOT_TU_DANG_NHAP', '').strip() == '0':
+        return False
+    try:
+        return sys.stdin is not None and sys.stdin.isatty()
+    except Exception:
+        return False
+
+
 def _lay_service():
     """Dựng service Google Sheets bằng token.json / credentials.json cạnh file này."""
     from google.oauth2.credentials import Credentials
@@ -339,24 +356,43 @@ def _lay_service():
     token_path = os.path.join(thu_muc, 'token.json')
     cred_path = os.path.join(thu_muc, 'credentials.json')
 
+    # Trước đây báo "chạy bot một lần để đăng nhập" — nhưng bot nào cũng đọc sheet
+    # tổng TRƯỚC, thiếu token là dừng luôn → máy mới không bao giờ đăng nhập được.
     if not os.path.exists(token_path):
-        raise LoiSheetCauHinh(
-            f"Không có {token_path}. Chạy bot một lần để đăng nhập Google "
-            f"và sinh token.json trước.")
+        if not os.path.exists(cred_path):
+            raise LoiSheetCauHinh(
+                f"Chưa đăng nhập Google: thiếu cả token.json lẫn credentials.json trong {thu_muc}.\n"
+                f"   Chép credentials.json (OAuth client loại Desktop app) vào thư mục bot,\n"
+                f"   rồi bấm đúp {_LENH_DANG_NHAP} để đăng nhập 1 lần.")
+        if not _co_nguoi_ngoi_may():
+            raise LoiSheetCauHinh(
+                f"Chưa đăng nhập Google (không có {token_path}).\n"
+                f"   Bấm đúp {_LENH_DANG_NHAP} (hoặc: python {_LENH_DANG_NHAP}) để đăng nhập 1 lần.")
+        print("🔑 Chưa có token.json → mở trình duyệt đăng nhập Google (chỉ 1 lần)...", flush=True)
+        try:
+            import dang_nhap_google
+            dang_nhap_google.dang_nhap(thu_muc)
+        except Exception as e:
+            raise LoiSheetCauHinh(
+                f"Đăng nhập Google không xong: {e}\n"
+                f"   Thử lại bằng cách bấm đúp {_LENH_DANG_NHAP}.")
     try:
         creds = Credentials.from_authorized_user_file(token_path, SCOPES)
     except Exception as e:
-        raise LoiSheetCauHinh(f"token.json hỏng: {e}")
+        raise LoiSheetCauHinh(
+            f"token.json hỏng: {e}\n   Bấm đúp {_LENH_DANG_NHAP} để đăng nhập lại.")
 
     if creds and creds.expired and creds.refresh_token:
         try:
             creds.refresh(Request())
         except Exception as e:
-            raise LoiSheetCauHinh(f"Không làm mới được token Google: {e}")
+            raise LoiSheetCauHinh(
+                f"Không làm mới được token Google: {e}\n"
+                f"   Bấm đúp {_LENH_DANG_NHAP} để đăng nhập lại.")
 
     if not creds or not creds.valid:
         raise LoiSheetCauHinh(
-            "Token Google không dùng được. Xoá token.json rồi chạy lại để đăng nhập.")
+            f"Token Google không dùng được. Bấm đúp {_LENH_DANG_NHAP} để đăng nhập lại.")
 
     return build('sheets', 'v4', credentials=creds, cache_discovery=False)
 

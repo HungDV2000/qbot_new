@@ -21,7 +21,7 @@ Chép 3 file vào thư mục này (không có sẵn vì chứa thông tin riêng
 |---|---|
 | `config.ini` | Chép từ `config.ini.example`, điền `bot_id` + `config_spreadsheet_id`. **API key để trên sheet tổng**, không để ở đây |
 | `credentials.json` | Google Cloud Console (OAuth Desktop app) |
-| `token.json` | Tự sinh lần chạy đầu, sau khi đăng nhập Google |
+| `token.json` | **Bấm đúp `dang_nhap_google.py`** — đăng nhập Google 1 lần là có |
 
 Soát cấu hình trước khi bật (không đặt lệnh): `python kiem_tra_cau_hinh.py`
 
