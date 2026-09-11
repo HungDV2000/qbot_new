@@ -8,7 +8,7 @@
 #
 #   QBOT_CONFIG=khac.ini ./start_all_bots.sh   → dùng file config khác
 #
-# Bản này chỉ chạy 5 bot cần thiết. Các bot đã nghỉ (hd_update_price,
+# Bản này chỉ chạy 6 bot cần thiết. Các bot đã nghỉ (hd_update_price,
 # hd_track_30_prices, hd_periodic_report, hd_order_123) KHÔNG có trong thư mục.
 # ==============================================================================
 cd "$(dirname "$0")" || exit 1
@@ -97,6 +97,7 @@ start_account() {
     run_bot hd_update_all.py                      "Số dư → J1:M2"
     run_bot hd_alert_possition_and_open_order.py  "Cảnh báo"
     run_bot hd_cancel_orders_schedule.py          "Hủy lệnh treo quá lâu"
+    run_bot hd_cancel_selective.py                "Xoá lệnh theo tick J–M"
 }
 
 if [ -n "$SHEET_MODE" ] && [ $# -eq 0 ]; then
@@ -117,7 +118,7 @@ echo "========================================"
 if [ "$SKIPPED" -gt 0 ]; then
     echo "✅ Đã khởi động $((TOTAL-SKIPPED))/$TOTAL tài khoản (bỏ qua $SKIPPED vì đang chạy)"
 else
-    echo "✅ Đã khởi động $TOTAL tài khoản — $((TOTAL*5)) tiến trình"
+    echo "✅ Đã khởi động $TOTAL tài khoản — $((TOTAL*6)) tiến trình"
 fi
 echo "========================================"
 echo "Trạng thái: ./status.sh   |   Dừng: ./stop_all_bots.sh"

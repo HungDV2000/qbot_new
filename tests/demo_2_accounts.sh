@@ -116,7 +116,7 @@ EOF
 # 8 bot phụ: giả (chỉ ngủ) — đủ để kiểm tra script start/stop/status
 for b in hd_order_123 hd_update_all hd_update_price hd_update_cho_va_khop \
          hd_alert_possition_and_open_order hd_cancel_orders_schedule \
-         hd_track_30_prices hd_periodic_report; do
+         hd_cancel_selective hd_track_30_prices hd_periodic_report; do
 cat > $b.py <<'EOF'
 import cst, time
 print(f"[{cst.account_name}] bot phụ đang chạy", flush=True)

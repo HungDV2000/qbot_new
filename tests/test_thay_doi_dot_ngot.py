@@ -245,17 +245,19 @@ class TestNgu(unittest.TestCase):
         khối đi là mất import → bot chết NameError ngay sau vòng quét đầu."""
         import ast, io
         for f in ("hd_order_multi.py", "hd_update_cho_va_khop.py", "hd_update_all.py",
-                  "hd_alert_possition_and_open_order.py", "hd_cancel_orders_schedule.py"):
+                  "hd_alert_possition_and_open_order.py", "hd_cancel_orders_schedule.py",
+                  "hd_cancel_selective.py"):
             cay = ast.parse(io.open(os.path.join(QBOT, f), encoding="utf-8").read())
             co = any(isinstance(n, ast.Import) and any(a.name == "config_watcher" for a in n.names)
                      for n in cay.body)
             with self.subTest(bot=f):
                 self.assertTrue(co, f"🔴 {f}: thiếu `import config_watcher` ở cấp module")
 
-    def test_ca_5_bot_deu_noi(self):
+    def test_ca_6_bot_deu_noi(self):
         import io
         for f in ("hd_order_multi.py", "hd_update_cho_va_khop.py", "hd_update_all.py",
-                  "hd_alert_possition_and_open_order.py", "hd_cancel_orders_schedule.py"):
+                  "hd_alert_possition_and_open_order.py", "hd_cancel_orders_schedule.py",
+                  "hd_cancel_selective.py"):
             with self.subTest(bot=f):
                 self.assertIn("config_watcher.ngu(", io.open(os.path.join(QBOT, f), encoding="utf-8").read(),
                               f"🔴 {f} không dò cấu hình → chạy KEY CŨ mãi sau khi đổi trên sheet")

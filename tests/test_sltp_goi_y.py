@@ -122,34 +122,54 @@ class TestGhiVaoSheet(unittest.TestCase):
     def setUp(self):
         self.M, self.sheet = _nap_module()
 
-    def test_ghi_dung_cot_N(self):
-        self.M.ghi_goi_y_sltp([["98", "103", "N"]])
+    BTC = ["BTC/USDT", "LONG", "N", "Y", 100.0, 10, "N", "N", 0]
+    ETH = ["ETH/USDT", "SHORT", "N", "Y", 50.0, 10, "N", "N", 0]
+
+    def test_ghi_tu_cot_J_dong_4(self):
+        self.M.ghi_goi_y_sltp([["98", "103", "N"]], [self.BTC], [])
         self.assertEqual(len(self.sheet.ghi), 1)
         g = self.sheet.ghi[0]
-        self.assertEqual(g["col"], "N", "phải ghi từ cột N (N=SL, O=TP, P=cho phép)")
+        self.assertEqual(g["col"], "J", "ghi khối J–P (J–M tick, N=SL, O=TP, P=cho phép)")
         self.assertEqual(g["idx"], 2, "idx=2 → ghi từ dòng 4")
-        self.assertEqual(g["rows"], [["98", "103", "N"]])
+        self.assertEqual(g["rows"], [["", "", "", "", "98", "103", "N"]])
 
     def test_KHONG_de_len_so_nguoi_dung_da_sua(self):
         """Người dùng sửa SL thành 95 → lần chạy sau phải GIỮ NGUYÊN 95."""
-        self.sheet.doc_tra_ve = [["95", "", "Y"]]      # N=95 (user sửa), O trống, P=Y
-        self.M.ghi_goi_y_sltp([["98", "103", "N"]])
+        cu = [self.BTC + ["", "", "", "", "95", "", "Y"]]   # N=95 (user sửa), O trống, P=Y
+        self.M.ghi_goi_y_sltp([["98", "103", "N"]], [self.BTC], cu)
         rows = self.sheet.ghi[0]["rows"]
-        self.assertEqual(rows[0][0], "95", "🔴 ĐÈ MẤT giá SL người dùng nhập!")
-        self.assertEqual(rows[0][1], "103", "ô trống thì mới điền gợi ý")
-        self.assertEqual(rows[0][2], "Y", "🔴 ĐÈ MẤT cờ cho phép người dùng bật!")
+        self.assertEqual(rows[0][4], "95", "🔴 ĐÈ MẤT giá SL người dùng nhập!")
+        self.assertEqual(rows[0][5], "103", "ô trống thì mới điền gợi ý")
+        self.assertEqual(rows[0][6], "Y", "🔴 ĐÈ MẤT cờ cho phép người dùng bật!")
+
+    def test_dong_xe_dich_thi_tick_va_SL_di_theo_ma(self):
+        """BTC từ dòng 4 xuống dòng 5 → tick J và SL 95 phải đi theo BTC."""
+        cu = [self.BTC + [True, "", "", "", "95", "104", "Y"], self.ETH + [""] * 7]
+        self.M.ghi_goi_y_sltp([["51", "48", "N"], ["98", "103", "N"]], [self.ETH, self.BTC], cu)
+        rows = self.sheet.ghi[0]["rows"]
+        self.assertEqual(rows[1], [True, "", "", "", "95", "104", "Y"], "🔴 J–P không đi theo BTC")
+        self.assertEqual(rows[0][:4], ["", "", "", ""], "🔴 tick của BTC rơi sang ETH")
+        self.assertEqual(rows[0][4:], ["51", "48", "N"], "ETH nhận gợi ý của chính nó")
 
     def test_tat_bang_config(self):
         M, sheet = _nap_module(fill=False)
-        M.ghi_goi_y_sltp([["98", "103", "N"]])
-        self.assertEqual(sheet.ghi, [], "fill_default_cho_va_khop=false thì không ghi gì")
+        M.ghi_goi_y_sltp([["98", "103", "N"]], [self.BTC], [])
+        self.assertEqual(sheet.ghi, [], "fill_default_cho_va_khop=false, không dời gì → không ghi")
 
     def test_doc_loi_thi_bo_qua_thay_vi_de_bua(self):
-        """Đọc N/O/P lỗi → KHÔNG ghi, để khỏi xoá mất số người dùng."""
+        """Đọc A–P lỗi → KHÔNG ghi J–P, để khỏi xoá mất số người dùng."""
         def no(*a, **k): raise RuntimeError("mạng lỗi")
         self.sheet.get_cho_va_khop = no
-        self.M.ghi_goi_y_sltp([["98", "103", "N"]])
+        anh = self.M.doc_anh_cu_cho_va_khop()
+        self.assertIsNone(anh)
+        self.M.ghi_goi_y_sltp([["98", "103", "N"]], [self.BTC], anh)
         self.assertEqual(self.sheet.ghi, [], "🔴 vẫn ghi dù không đọc được — nguy cơ đè mất dữ liệu")
+
+    def test_doc_dang_FORMULA_de_giu_cong_thuc_va_do_chinh_xac(self):
+        goi = []
+        self.sheet.get_cho_va_khop = lambda rng, value_render_option=None: goi.append((rng, value_render_option)) or []
+        self.M.doc_anh_cu_cho_va_khop()
+        self.assertEqual(goi, [("A4:P1000", "FORMULA")])
 
     def test_default_allow_order_Y_thi_tu_dong_hoan_toan(self):
         M, sheet = _nap_module(allow="Y")
@@ -163,7 +183,11 @@ class TestCodeDaNoi(unittest.TestCase):
         src = io.open("hd_update_cho_va_khop.py", encoding="utf-8").read()
         self.assertGreaterEqual(src.count("compute_default_sl_tp_prices"), 2,
                                 "🔴 hàm vẫn không ai gọi")
-        self.assertIn("ghi_goi_y_sltp(tab_sltp)", src, "chưa nối vào luồng ghi sheet")
+        self.assertIn("ghi_goi_y_sltp(tab_sltp, tab_100_ma_2d_arr, anh_cu)", src,
+                      "chưa nối vào luồng ghi sheet")
+        # Phải chụp A–P TRƯỚC khi xoá A–I, nếu không sẽ không biết J–P thuộc mã nào
+        self.assertLess(src.index("anh_cu = doc_anh_cu_cho_va_khop()"),
+                        src.index('clear_multi(gg_sheet_factory.tab_cho_va_khop, 2, "a"'))
 
     def test_cac_tham_so_layer_da_duoc_dung(self):
         import io

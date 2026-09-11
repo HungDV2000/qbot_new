@@ -1,6 +1,7 @@
 import ccxt
 import cst
 import config_watcher
+import cot_nguoi_dung
 import gg_sheet_factory
 import logging
 import time
@@ -509,54 +510,50 @@ def goi_y_sltp_cho_dong(row_ai):
     return [sl, tp, cst.default_allow_order]
 
 
-def ghi_goi_y_sltp(tab_sltp):
+def doc_anh_cu_cho_va_khop():
     """
-    Ghi gợi ý vào cột N/O/P — CHỈ điền ô ĐANG TRỐNG, không đè số người dùng sửa.
+    Đọc A–P NGAY TRƯỚC khi xoá A–I, để biết J–P đang thuộc mã nào.
+    Đọc dạng FORMULA: số giữ nguyên độ chính xác (không bị làm tròn theo định
+    dạng hiển thị) và ô công thức giữ nguyên công thức khi ghi lại.
+    Trả None nếu lỗi → bước sau để nguyên J–P, không dời/không điền.
+    """
+    try:
+        return gg_sheet_factory.get_cho_va_khop("A4:P1000", value_render_option="FORMULA") or []
+    except Exception as e:
+        logger.warning(f"Không đọc được A4:P1000 trước khi ghi: {e}")
+        print(f"  ⚠️  Không đọc được A–P — lượt này để nguyên J–P: {e}", flush=True)
+        return None
 
-    Vì sao cần: hd_order_multi chỉ đặt SL/TP khi cột D='Y' VÀ cột P='Y' VÀ
-    N/O có giá. Trước đây KHÔNG BOT NÀO điền N/O/P nên chúng luôn trống
-    → bot bỏ qua mọi dòng → vị thế mở mà không có cắt lỗ.
+
+def ghi_goi_y_sltp(tab_sltp, rows_ai, anh_cu):
+    """
+    Ghi lại cột người dùng J–P sau khi A–I đổi:
+      • J–M (tick xoá lệnh) và N/O/P (giá SL/TP, cho phép) DỜI THEO MÃ khi thứ
+        tự dòng đổi — nếu không, tick/giá của BTC sẽ rơi sang mã khác.
+      • N/O/P còn trống thì điền gợi ý — KHÔNG đè số người dùng đã sửa.
+
+    Vì sao cần điền gợi ý: hd_order_multi chỉ đặt SL/TP khi cột D='Y' VÀ cột
+    P='Y' VÀ N/O có giá. Trước đây KHÔNG BOT NÀO điền N/O/P nên chúng luôn
+    trống → bot bỏ qua mọi dòng → vị thế mở mà không có cắt lỗ.
 
     (compute_default_sl_tp_prices đã có sẵn trong file này từ lâu nhưng
      không ai gọi — đây là chỗ nối nó vào luồng chạy.)
     """
-    if not tab_sltp:
-        return
-    if not cst.fill_default_cho_va_khop:
-        print("  ⏭️  fill_default_cho_va_khop = false → không điền N/O/P", flush=True)
-        return
+    if anh_cu is None:
+        return          # không đọc được ảnh cũ → không dám dời/ghi đè
+    dien = bool(cst.fill_default_cho_va_khop)
+    if not dien:
+        print("  ⏭️  fill_default_cho_va_khop = false → không điền gợi ý N/O/P", flush=True)
 
-    # Đọc giá trị hiện có để GIỮ NGUYÊN những ô người dùng đã sửa
-    try:
-        dang_co = gg_sheet_factory.get_cho_va_khop("N4:P1000") or []
-    except Exception as e:
-        logger.warning(f"Không đọc được N4:P1000, bỏ qua bước điền gợi ý: {e}")
-        print(f"  ⚠️  Không đọc được N/O/P — bỏ qua để tránh ghi đè: {e}", flush=True)
+    khoi, co_doi, so_doi_cho = cot_nguoi_dung.can_chinh(anh_cu, rows_ai, tab_sltp, dien)
+    if not co_doi:
+        print("  ✔️  Cột J–P không cần đổi", flush=True)
         return
 
-    def cu(i, j):
-        if i < len(dang_co) and j < len(dang_co[i]):
-            v = str(dang_co[i][j]).strip()
-            return v if v else None
-        return None
-
-    khoi, so_dien, so_giu = [], 0, 0
-    for i, goi_y in enumerate(tab_sltp):
-        dong = []
-        for j in range(3):
-            san_co = cu(i, j)
-            if san_co is not None:
-                dong.append(san_co); so_giu += 1
-            else:
-                dong.append(goi_y[j])
-                if goi_y[j] != "":
-                    so_dien += 1
-        khoi.append(dong)
-
-    gg_sheet_factory.update_multi(gg_sheet_factory.tab_cho_va_khop, 2, khoi, "N")
-    print(f"  ✍️  Cột N/O/P: điền mới {so_dien} ô, giữ nguyên {so_giu} ô người dùng đã sửa",
-          flush=True)
-    logger.info(f"N/O/P: điền {so_dien}, giữ {so_giu}")
+    gg_sheet_factory.update_multi(gg_sheet_factory.tab_cho_va_khop, 2, khoi, "J")
+    print(f"  ✍️  Cột J–P: ghi {len(khoi)} dòng, dời theo mã {so_doi_cho} dòng "
+          f"(số người dùng đã sửa được giữ nguyên)", flush=True)
+    logger.info(f"J–P: ghi {len(khoi)} dòng, dời theo mã {so_doi_cho}")
 
 
 def build_cho_va_khop_row(
@@ -1079,7 +1076,10 @@ def do_it():
     logger.info(f"Tổng dòng dữ liệu: {len(tab_100_ma_2d_arr)} (ĐÓNG: {len(closed_list)})")
     
     try:
-        # Clear A–I + Q; cột J–P (user) không đụng tới
+        # Chụp A–P TRƯỚC khi xoá: để J–P (của người dùng) dời theo đúng mã
+        anh_cu = doc_anh_cu_cho_va_khop()
+
+        # Clear A–I + Q; cột J–P (user) không xoá — chỉ dời theo mã ở bước cuối
         print("  🗑️  Xóa vùng A4:I1000 và Q4:Q1000 trước khi ghi...", flush=True)
         gg_sheet_factory.clear_multi(gg_sheet_factory.tab_cho_va_khop, 2, "a", end_row=1000, end_column="I")
         gg_sheet_factory.clear_multi(gg_sheet_factory.tab_cho_va_khop, 2, "Q", end_row=1000, end_column="Q")
@@ -1098,7 +1098,7 @@ def do_it():
         # Gợi ý SL/TP vào N/O/P — chỉ điền ô trống, không đè số người dùng sửa.
         # Không có bước này thì N/O/P luôn trống → hd_order_multi bỏ qua mọi
         # dòng → vị thế mở mà KHÔNG CÓ CẮT LỖ.
-        ghi_goi_y_sltp(tab_sltp)
+        ghi_goi_y_sltp(tab_sltp, tab_100_ma_2d_arr, anh_cu)
 
         print(f"✅ Hoàn thành! Đã cập nhật {len(tab_100_ma_2d_arr)} dòng (A–I + cột Q)", flush=True)
         logger.info(f"✅ Hoàn thành cập nhật sheet: {len(tab_100_ma_2d_arr)} dòng (A–I + Q)")

@@ -1,7 +1,7 @@
 # QBot — bản gọn
 
 Bot giao dịch Binance Futures điều khiển bằng Google Sheet.
-Bản này chỉ giữ **5 bot cần thiết** (19 file `.py`), bỏ các bot đã nghỉ.
+Bản này chỉ giữ **6 bot cần thiết**, bỏ các bot đã nghỉ.
 
 ---
 
@@ -25,7 +25,7 @@ cp config.ini.example config.ini
 
 ---
 
-## 2. NĂM BOT
+## 2. SÁU BOT
 
 | Bot | Việc | Tắt được? |
 |---|---|---|
@@ -34,6 +34,26 @@ cp config.ini.example config.ini
 | `hd_update_all.py` | Lấy **số dư** ghi vào **J1:M2** tab ĐẶT LỆNH | Được, chỉ mất số dư trên sheet |
 | `hd_alert_possition_and_open_order.py` | Cảnh báo Telegram | Được |
 | `hd_cancel_orders_schedule.py` | Hủy lệnh VÀO treo quá lâu | Được, nhưng lệnh treo sẽ tồn mãi |
+| `hd_cancel_selective.py` | Xoá lệnh theo **tick J–M** tab "Chờ và khớp" | Được, chỉ mất tính năng tick xoá |
+
+### Xoá lệnh bằng tick J–M (tab "Chờ và khớp")
+
+Tick (checkbox TRUE, hoặc gõ `Y`/`X`/`1`) vào dòng của mã cần xoá. Trong vòng
+`cancel_selective_seconds` (mặc định 60 giây) bot xoá lệnh, **tự bỏ tick**, cập
+nhật lại G/H/I và báo Telegram.
+
+| Cột | Xoá gì |
+|---|---|
+| **J** — XOÁ ENTRY | Lệnh **vào** còn treo. **Không đụng** SL/TP |
+| **K** — XOÁ SL/TP | Cả cắt lỗ lẫn chốt lời (giữ lệnh vào) |
+| **L** — XOÁ LỆNH SÓT | Chỉ khi còn sót **một** phía (chỉ SL hoặc chỉ TP). Đủ cả hai thì không xoá |
+| **M** — XOÁ TẤT CẢ | Mọi lệnh của mã — dùng khi vị thế đã **ĐÓNG** (cột D) |
+
+⚠️ Xoá SL/TP (K/M) mà cột **P = Y** thì `hd_order_multi` sẽ **đặt lại** SL/TP ở
+vòng sau. Muốn bỏ hẳn thì đổi P thành `N` trước.
+
+Tick và giá SL/TP (J–P) **đi theo mã**: khi có vị thế mới làm thứ tự dòng đổi,
+`hd_update_cho_va_khop` dời J–P theo đúng mã (ô công thức thì đứng yên tại chỗ).
 
 ### 🔴 Đừng tắt `hd_update_cho_va_khop`
 
@@ -69,6 +89,7 @@ python3 hd_update_cho_va_khop.py
 python3 hd_update_all.py
 python3 hd_alert_possition_and_open_order.py
 python3 hd_cancel_orders_schedule.py
+python3 hd_cancel_selective.py
 ```
 
 Chạy `python3 <bot>.py` mà **không đặt** `QBOT_ACCOUNT` thì bot tự chạy cho

@@ -45,6 +45,9 @@ cancel_order_after_minutes = 30   ; chỉ huỷ LỆNH VÀO treo quá ngần nà
 ; false (AN TOÀN): KHÔNG BAO GIỜ huỷ SL/TP.  true: huỷ tất — vị thế mất bảo vệ!
 cancel_all_orders = false
 
+; ── BOT XOÁ LỆNH THEO TICK J–M (hd_cancel_selective) ──────────────────────────
+cancel_selective_seconds = 60     ; bao lâu đọc tick 1 lần (GIÂY, tối thiểu 15)
+
 ; ── CHỐNG LỖI 429 (Google chỉ cho 60 lượt đọc/phút, dùng CHUNG mọi tài khoản) ──
 state_cache_ttl_sec = 10          ; ô B2 chỉ đọc thật mỗi ngần này giây
 account_start_stagger_sec = 20    ; các tài khoản khởi động lệch nhau ngần này giây
