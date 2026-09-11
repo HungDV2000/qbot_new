@@ -1188,7 +1188,12 @@ def printf(name, data):
             order_id = datetime.now().strftime("%Y%m%d_%H%M%S")
             logger.warning(f"Không tìm thấy order ID trong response cho {name}, dùng timestamp: {order_id}")
         
-        filename = str(cst.account_dir("order") / str(name) / (str(order_id) + ".txt"))  # [MULTI-ACC]
+        # Tên mã dạng CCXT "ATOM/USDT:USDT" có '/' và ':' — Windows cấm ':' trong
+        # tên thư mục (WinError 267). Rút về "ATOMUSDT", bỏ mọi ký tự lạ.
+        import re
+        ten_thu_muc = re.sub(r'[^A-Za-z0-9_.-]', '', str(name).replace(':USDT', '')) or 'khac'
+        ten_file = re.sub(r'[^A-Za-z0-9_.-]', '_', str(order_id)) + ".txt"
+        filename = str(cst.account_dir("order") / ten_thu_muc / ten_file)  # [MULTI-ACC]
         os.makedirs(os.path.dirname(filename), exist_ok=True)
         
         # Ghi file với UTF-8 encoding
