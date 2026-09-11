@@ -20,6 +20,7 @@ Khác bản cũ trong qbot_setup:
   • Đã xoá lệnh mà chưa xoá được tick → KHÔNG xoá lệnh lần 2.
 """
 
+import giu_cua_so  # PHẢI nạp ĐẦU TIÊN: dừng/lỗi thì giữ cửa sổ Windows để đọc thông báo
 import ccxt
 import cst
 import config_watcher

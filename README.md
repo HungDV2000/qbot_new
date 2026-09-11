@@ -133,6 +133,7 @@ Bản đầy đủ của chúng nằm ở `qbot_setup/`.
 
 | Hiện tượng | Nguyên nhân |
 |---|---|
+| Cửa sổ dừng ở *"nhấn Enter để đóng cửa sổ"* | Bot đã dừng — đọc thông báo/lỗi ngay phía trên dòng đó. Cửa sổ cố ý không tự đóng để kịp đọc (Ctrl+C thì đóng luôn) |
 | `0xc000012d` khi khởi động | Hết RAM / page file Windows. Tăng page file lên 8192 MB rồi khởi động lại máy |
 | `429 Too Many Requests` | Vượt hạn mức Google. Tăng `state_cache_ttl_sec` lên 15–20 |
 | `ModuleNotFoundError` | Thiếu file khi copy — chép **toàn bộ** thư mục |

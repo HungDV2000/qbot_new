@@ -7,6 +7,7 @@ Mỗi `delay_calert_possition_and_open_order` giây so danh sách vị thế v�
                       của mã đó (SL/TP sót, lệnh vào chưa khớp) — thử lại 3 lần.
 Không đọc/ghi Google Sheet.
 """
+import giu_cua_so  # PHẢI nạp ĐẦU TIÊN: dừng/lỗi thì giữ cửa sổ Windows để đọc thông báo
 import ccxt
 from binance_futures_direct import resync_exchange_time  # [Fix1] chống clock drift -1021
 import cst

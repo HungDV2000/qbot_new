@@ -14,6 +14,7 @@ Bản cũ còn chế độ `full` dựng bảng "100 mã" 58 cột — đã bỏ
 
 Chạy: python hd_update_all.py
 """
+import giu_cua_so  # PHẢI nạp ĐẦU TIÊN: dừng/lỗi thì giữ cửa sổ Windows để đọc thông báo
 import logging
 import os
 import time

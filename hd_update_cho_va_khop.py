@@ -1,3 +1,4 @@
+import giu_cua_so  # PHẢI nạp ĐẦU TIÊN: dừng/lỗi thì giữ cửa sổ Windows để đọc thông báo
 import ccxt
 import cst
 import config_watcher

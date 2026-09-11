@@ -22,7 +22,7 @@ rm -rf "$SB"; mkdir -p "$SB"; cd "$SB" || exit 1
 
 # ── Code THẬT ────────────────────────────────────────────────────────────────
 cp "$QBOT"/cst.py "$QBOT"/hd_order_multi.py "$QBOT"/binance_order_helper.py \
-   "$QBOT"/rate_guard.py \
+   "$QBOT"/rate_guard.py "$QBOT"/giu_cua_so.py \
    "$QBOT"/sheet_config.py "$QBOT"/config_watcher.py .
 cp "$QBOT"/start_all_bots.sh "$QBOT"/stop_all_bots.sh "$QBOT"/status.sh .
 chmod +x ./*.sh

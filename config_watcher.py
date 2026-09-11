@@ -259,6 +259,11 @@ def khoi_dong_lai(ly_do="cấu hình trên sheet đã đổi", nha_khoa=None):
     try:
         env = dict(os.environ, QBOT_RESTART_DELAY='3')
         subprocess.Popen([sys.executable] + sys.argv, env=env, start_new_session=True)
+        try:
+            import giu_cua_so          # tiến trình cũ thoát CỐ Ý → đừng chờ Enter
+            giu_cua_so.khong_giu()
+        except ImportError:
+            pass
         _log(f"đã mở tiến trình mới: {' '.join([os.path.basename(sys.executable)] + sys.argv)}")
     except Exception as e:
         _log(f"❌ KHÔNG mở được tiến trình mới: {e}")

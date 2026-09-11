@@ -7,6 +7,7 @@ Soát cấu hình TRƯỚC khi bật bot — không đặt lệnh, không đụn
 In ra: nguồn cấu hình, danh sách tài khoản, tham số của từng tài khoản, và
 chỉ rõ chỗ nào thiếu/lệch. Chạy cái này mỗi lần đổi cấu hình trên sheet.
 """
+import giu_cua_so  # PHẢI nạp ĐẦU TIÊN: dừng/lỗi thì giữ cửa sổ Windows để đọc thông báo
 import os
 import sys
 

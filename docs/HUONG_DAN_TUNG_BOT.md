@@ -36,8 +36,14 @@ Có **6 bot**, bật **riêng từng cái** được. Mỗi bot tự chạy cho 
 | Dừng 1 bot | Bấm **Ctrl+C** trong cửa sổ của bot đó (hoặc đóng cửa sổ) |
 | Xem bot nào đang chạy | Nhìn các cửa sổ tên **"QBot - …"** trên thanh tác vụ |
 
-Mỗi bot mở **một cửa sổ CMD riêng**. Bot lỗi thì cửa sổ vẫn giữ nguyên để đọc
-thông báo. Không có `chay_bot.bat` thì gõ thẳng `python hd_update_cho_va_khop.py`.
+Mỗi bot mở **một cửa sổ CMD riêng**. Không có `chay_bot.bat` thì gõ thẳng
+`python hd_update_cho_va_khop.py`, hoặc **bấm đúp** file `.py`.
+
+**Cửa sổ không tự đóng khi bot dừng.** Dù bot dừng vì lỗi cấu hình, lỗi chưa lường
+trước hay thiếu thư viện, và dù là `kiem_tra_cau_hinh.py` chạy xong, thông báo vẫn
+nằm trên màn hình kèm dòng *"⏸ Chương trình đã dừng… nhấn Enter để đóng cửa sổ"*.
+Đọc xong nhấn Enter mới đóng. Riêng khi đại ca **bấm Ctrl+C** thì cửa sổ đóng luôn,
+không hỏi.
 
 ### Linux / macOS / Git Bash
 

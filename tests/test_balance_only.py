@@ -113,7 +113,7 @@ class binance:
 
 def _dung_hop_cat(them_config=""):
     d = Path(tempfile.mkdtemp(prefix="qbot_bal_"))
-    for f in ("cst.py", "rate_guard.py", "config_watcher.py",
+    for f in ("cst.py", "rate_guard.py", "config_watcher.py", "giu_cua_so.py",
               "sheet_config.py", "hd_update_all.py"):
         shutil.copy(QBOT / f, d / f)
     for ten, noi_dung in MOCKS.items():
