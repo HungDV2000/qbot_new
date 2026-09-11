@@ -4,14 +4,8 @@ import config_watcher
 import cot_nguoi_dung
 import gg_sheet_factory
 import logging
-import time
 from datetime import datetime
-from pathlib import Path
 import os
-import requests
-import hmac
-import hashlib
-import urllib.parse
 from googleapiclient.errors import HttpError
 from binance_futures_direct import (
     fetch_algo_orders_for_symbol,
@@ -20,6 +14,7 @@ from binance_futures_direct import (
     resync_exchange_time,
 )
 from binance_symbol_row import fetch_all_tickers_24h, get_sheet_col_c_price
+from phan_loai_lenh import la_lenh_dong, phan_loai
 
 file_name = os.path.basename(os.path.abspath(__file__))  
 os.system(f"title {file_name} - {cst.key_name}")
@@ -173,87 +168,27 @@ def get_position_leverage_map():
 
 def check_sl_tp_orders(symbol, orders):
     """
-    Phân tích danh sách orders để xác định có SL và TP không.
-    Quét cả algo orders lẫn open orders thông thường.
+    Có SL / có TP / tổng số lệnh của 1 mã — quét cả algo lẫn lệnh thường.
 
-    Logic phân biệt:
-    - Algo Orders: STOP_MARKET, STOP_LOSS → SL; TRAILING_STOP (callbackRate>0, reduceOnly) → TP
-    - Open Orders: STOP, STOP_LIMIT, STOP_MARKET (reduceOnly) → SL
+    Nhận diện theo phan_loai_lenh, khớp cách hd_order_multi đặt lệnh:
+    SL = STOP_MARKET closePosition, TP = LIMIT reduceOnly (hoặc trailing).
+    Bản cũ chỉ coi TRAILING/TAKE_PROFIT là TP → cột "Có TP" luôn N.
 
     Returns: (has_sl, has_tp, order_count)
     """
-    has_sl = False
-    has_tp = False
-
     try:
-        # BƯỚC 1: QUÉT ALGO ORDERS (quan trọng nhất!)
         algo_orders = get_algo_orders_for_symbol(symbol)
         # [Bug C FIX] Bắt cả TRIGGERED (TP đã kích hoạt nhưng chưa fill)
         active_algo_orders = [
             o for o in algo_orders
-            if o.get('algoStatus', '').upper() in ('NEW', 'TRIGGERED')
+            if str(o.get('algoStatus', '')).upper() in ('NEW', 'TRIGGERED')
         ]
-
-        logger.debug(f"{symbol}: Tìm thấy {len(active_algo_orders)} active/triggered algo orders")
-
-        for order in active_algo_orders:
-            algo_type = order.get('algoType', '').upper()
-            reduce_only = order.get('reduceOnly', False)
-            
-            # Lấy callbackRate để phân biệt
-            callback_rate = order.get('callbackRate')
-            callback_val = 0.0
-            if callback_rate is not None:
-                try:
-                    callback_val = float(callback_rate)
-                except:
-                    callback_val = 0.0
-
-            if reduce_only:
-                # == KIỂM TRA TP (Trailing Stop) ==
-                if algo_type in ['CONDITIONAL', 'VP', 'TRAILING_STOP_MARKET'] and callback_val > 0:
-                    has_tp = True
-                    logger.debug(f"  → Detected TP algo order: {algo_type}, callbackRate={callback_val}")
-                
-                # == KIỂM TRA SL (Stop Limit/Market) ==
-                if algo_type in ['STOP', 'STOP_MARKET', 'STOP_LOSS', 'STOP_LOSS_MARKET', 'STOP_LIMIT']:
-                    has_sl = True
-                    logger.debug(f"  → Detected SL algo order: {algo_type}")
-                elif algo_type == 'CONDITIONAL' and callback_val == 0:
-                    has_sl = True
-                    logger.debug(f"  → Detected SL algo order: CONDITIONAL (callbackRate=0)")
-        
-        # ✅ BƯỚC 2: QUÉT OPEN ORDERS (fallback nếu chưa có SL)
-        if not has_sl:
-            for order in orders:
-                try:
-                    order_type = str(order.get('type', '')).upper()
-                    info = order.get('info', {})
-                    reduce_only = order.get('reduceOnly', False) or info.get('reduceOnly', False)
-                    
-                    # Check Stop Loss (STOP nhưng không phải TRAILING_STOP)
-                    if order_type in ['STOP', 'STOP_LIMIT', 'STOP_MARKET'] and reduce_only:
-                        has_sl = True
-                        logger.debug(f"  → Detected SL open order: {order_type}")
-                    
-                    # Check Take Profit (TRAILING_STOP hoặc TAKE_PROFIT)
-                    if 'TRAILING' in order_type or 'TAKE_PROFIT' in order_type:
-                        has_tp = True
-                        logger.debug(f"  → Detected TP open order: {order_type}")
-                        
-                except Exception as e:
-                    logger.error(f"Lỗi khi phân tích order: {e}")
-                    continue
-        
-        # Đếm tổng số orders (algo + open)
-        order_count = len(active_algo_orders) + len(orders)
-        
+        loai = ([phan_loai(o, la_algo=True) for o in active_algo_orders]
+                + [phan_loai(o) for o in orders])
+        return 'SL' in loai, 'TP' in loai, len(active_algo_orders) + len(orders)
     except Exception as e:
         logger.error(f"Lỗi khi check SL/TP cho {symbol}: {e}", exc_info=True)
-        # Fallback: chỉ đếm open orders
-        order_count = len(orders)
-    
-    return has_sl, has_tp, order_count
+        return False, False, len(orders)
 
 
 def get_all_entry_algo_orders():
@@ -332,8 +267,7 @@ def get_all_reduce_only_orders_by_symbol():
 
     for order in all_open_orders:
         info = order.get('info', {}) or {}
-        reduce_only = order.get('reduceOnly', False) or info.get('reduceOnly', False)
-        if not reduce_only:
+        if not la_lenh_dong(order):
             continue
         sym_clean = order.get('symbol', '').replace('/', '').replace(':USDT', '')
         if not sym_clean:
@@ -342,10 +276,10 @@ def get_all_reduce_only_orders_by_symbol():
             result[sym_clean] = {'open': [], 'algo': [], 'has_sl': False, 'has_tp': False, 'count': 0, 'side': None}
         result[sym_clean]['open'].append(order)
         # Đoán loại + side ngược (nếu SL SELL reduceOnly → position là LONG)
-        otype = str(order.get('type', '')).upper()
-        if otype in ['STOP', 'STOP_LIMIT', 'STOP_MARKET']:
+        loai = phan_loai(order)
+        if loai == 'SL':
             result[sym_clean]['has_sl'] = True
-        if 'TRAILING' in otype or 'TAKE_PROFIT' in otype:
+        elif loai == 'TP':
             result[sym_clean]['has_tp'] = True
         if result[sym_clean]['side'] is None:
             s = str(order.get('side', info.get('side', ''))).upper()
@@ -358,8 +292,7 @@ def get_all_reduce_only_orders_by_symbol():
     algo_orders = get_all_open_algo_orders_batch() or []
     for algo in algo_orders:
         info = algo.get('info', {}) or {}
-        reduce_only = algo.get('reduceOnly', info.get('reduceOnly', False))
-        if not reduce_only:
+        if not la_lenh_dong(algo):
             continue
         status = str(algo.get('algoStatus', '')).upper()
         if status not in ('NEW', 'TRIGGERED'):
@@ -370,17 +303,11 @@ def get_all_reduce_only_orders_by_symbol():
         if sym_clean not in result:
             result[sym_clean] = {'open': [], 'algo': [], 'has_sl': False, 'has_tp': False, 'count': 0, 'side': None}
         result[sym_clean]['algo'].append(algo)
-        atype = str(algo.get('algoType', '')).upper()
-        try:
-            cb = float(algo.get('callbackRate', info.get('callbackRate', 0)) or 0)
-        except (ValueError, TypeError):
-            cb = 0.0
-        if atype in ['CONDITIONAL', 'VP', 'TRAILING_STOP_MARKET'] and cb > 0:
+        loai = phan_loai(algo, la_algo=True)
+        if loai == 'SL':
+            result[sym_clean]['has_sl'] = True
+        elif loai == 'TP':
             result[sym_clean]['has_tp'] = True
-        elif atype in ['STOP', 'STOP_MARKET', 'STOP_LOSS', 'STOP_LOSS_MARKET', 'STOP_LIMIT']:
-            result[sym_clean]['has_sl'] = True
-        elif atype == 'CONDITIONAL' and cb == 0:
-            result[sym_clean]['has_sl'] = True
         if result[sym_clean]['side'] is None:
             s = str(algo.get('side', info.get('side', ''))).upper()
             if s == 'SELL':
@@ -1092,7 +1019,7 @@ def do_it():
         gg_sheet_factory.update_multi(gg_sheet_factory.tab_cho_va_khop, 2, tab_100_ma_2d_arr, "a")
 
         if tab_q_prices:
-            print(f"  ✍️  Ghi cột Q (giá hiện tại = cột C bot 100 mã) — {len(tab_q_prices)} dòng...", flush=True)
+            print(f"  ✍️  Ghi cột Q (giá hiện tại) — {len(tab_q_prices)} dòng...", flush=True)
             gg_sheet_factory.update_multi(gg_sheet_factory.tab_cho_va_khop, 2, tab_q_prices, "Q")
 
         # Gợi ý SL/TP vào N/O/P — chỉ điền ô trống, không đè số người dùng sửa.

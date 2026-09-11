@@ -23,7 +23,7 @@ echo "  DIỄN TẬP: ĐỔI KEY TRÊN SHEET, BOT TỰ NẠP LẠI"
 echo "════════════════════════════════════════════════════════════"
 rm -rf "$SB"; mkdir -p "$SB"; cd "$SB" || exit 1
 
-cp "$QBOT"/cst.py "$QBOT"/rate_guard.py "$QBOT"/symbol_filter.py \
+cp "$QBOT"/cst.py "$QBOT"/rate_guard.py \
    "$QBOT"/config_watcher.py "$QBOT"/sheet_config.py .
 mv sheet_config.py sheet_config_that.py
 

@@ -4,7 +4,7 @@
 #
 #   ./tests/demo_3_accounts_rate.sh [số_giây]      # mặc định 180
 #
-# Chạy code THẬT (cst.py, hd_order_multi.py, order_state_tracker.py, rate_guard.py)
+# Chạy code THẬT (cst.py, hd_order_multi.py, rate_guard.py)
 # nhưng Binance/Google/Telegram là bản giả → KHÔNG mạng, KHÔNG tiền thật.
 #
 # ĐỐI CHỨNG: chạy 2 lượt trên CÙNG bộ code, chỉ khác 1 tham số config

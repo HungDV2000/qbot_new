@@ -113,12 +113,9 @@ class binance:
 
 def _dung_hop_cat(them_config=""):
     d = Path(tempfile.mkdtemp(prefix="qbot_bal_"))
-    # hd_update_price.py là bot ĐÃ NGHỈ — bản gọn (qbot_new) không chép nó,
-    # nên chỉ copy file nào thực sự có.
-    for f in ("cst.py", "rate_guard.py", "symbol_filter.py", "config_watcher.py",
-              "sheet_config.py", "hd_update_all.py", "hd_update_price.py"):
-        if (QBOT / f).exists():
-            shutil.copy(QBOT / f, d / f)
+    for f in ("cst.py", "rate_guard.py", "config_watcher.py",
+              "sheet_config.py", "hd_update_all.py"):
+        shutil.copy(QBOT / f, d / f)
     for ten, noi_dung in MOCKS.items():
         (d / ten).write_text(textwrap.dedent(noi_dung), encoding="utf-8")
     (d / "googleapiclient").mkdir(exist_ok=True)
@@ -194,34 +191,16 @@ class TestBalanceOnly(unittest.TestCase):
         self.assertLessEqual(len(self.goi), 2, f"gọi quá nhiều: {self.goi}")
 
 
-@unittest.skipUnless((QBOT / "hd_update_price.py").exists(),
-                     "hd_update_price.py không có trong thư mục này (bản gọn)")
-class TestUpdatePriceDaNghi(unittest.TestCase):
-    def test_tu_thoat_kem_giai_thich(self):
-        d = _dung_hop_cat()
-        try:
-            out, goi = _chay(d, "hd_update_price.py", giay=20)
-            self.assertIn("ĐÃ NGHỈ", out, f"phải báo rõ đã nghỉ:\n{out[:400]}")
-            self.assertNotIn("Traceback", out)
-            self.assertEqual(goi, [], "đã nghỉ thì không được gọi sheet lần nào")
-        finally:
-            shutil.rmtree(d, ignore_errors=True)
-
-    def test_van_chay_lai_duoc_khi_dat_full(self):
+class TestCheDoFullDaBo(unittest.TestCase):
+    def test_config_cu_con_full_van_chi_ghi_so_du(self):
+        """Máy cũ còn dòng `update_all_mode = full` → không được dựng bảng 100 mã."""
         d = _dung_hop_cat(them_config="update_all_mode = full")
         try:
-            out, _ = _chay(d, "hd_update_price.py", giay=20)
-            self.assertNotIn("ĐÃ NGHỈ", out, "đặt full thì phải chạy lại")
-        finally:
-            shutil.rmtree(d, ignore_errors=True)
-
-
-class TestCauHinhSai(unittest.TestCase):
-    def test_gia_tri_la_thi_dung_han(self):
-        d = _dung_hop_cat(them_config="update_all_mode = nhe")
-        try:
-            out, _ = _chay(d, "hd_update_all.py", giay=20)
-            self.assertIn("không hợp lệ", out, "gõ sai chế độ phải báo, không đoán bừa")
+            out, goi = _chay(d, "hd_update_all.py", giay=20)
+            self.assertNotIn("Traceback", out, out[:600])
+            self.assertIn("đã bỏ", out, "phải báo cho người dùng biết chế độ full đã bỏ")
+            self.assertEqual([g for g in goi if "100" in g["tab"] and "ĐẶT LỆNH" not in g["tab"]], [])
+            self.assertTrue([g for g in goi if g["op"] == "write" and "ĐẶT LỆNH" in g["tab"]])
         finally:
             shutil.rmtree(d, ignore_errors=True)
 

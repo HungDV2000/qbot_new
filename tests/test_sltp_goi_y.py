@@ -197,5 +197,43 @@ class TestCodeDaNoi(unittest.TestCase):
                 self.assertIn(k, src, f"{k} vẫn là tham số chết")
 
 
+class TestCotCoSlCoTp(unittest.TestCase):
+    """Cột G/H (Có SL / Có TP) phải nhận đúng lệnh hd_order_multi đặt:
+    SL = STOP_MARKET closePosition, TP = LIMIT reduceOnly. Bản cũ H luôn = N."""
+    SL = {"id": "S", "type": "stop_market", "reduceOnly": False,
+          "info": {"origType": "STOP_MARKET", "closePosition": "true"}}
+    TP = {"id": "T", "type": "limit", "reduceOnly": True,
+          "info": {"origType": "LIMIT", "reduceOnly": True}}
+    VAO = {"id": "E", "type": "limit", "reduceOnly": False, "info": {"origType": "LIMIT"}}
+
+    def setUp(self):
+        self.M, _ = _nap_module()
+        self.M.get_algo_orders_for_symbol = lambda s: []
+
+    def test_nhan_du_SL_va_TP(self):
+        self.assertEqual(self.M.check_sl_tp_orders("BTC/USDT:USDT", [self.SL, self.TP, self.VAO]),
+                         (True, True, 3), "🔴 TP LIMIT / SL closePosition không được nhận ra")
+
+    def test_chi_co_lenh_vao(self):
+        self.assertEqual(self.M.check_sl_tp_orders("BTC/USDT:USDT", [self.VAO]), (False, False, 1))
+
+    def test_algo_trailing_la_TP(self):
+        self.M.get_algo_orders_for_symbol = lambda s: [
+            {"algoStatus": "NEW", "orderType": "TRAILING_STOP_MARKET", "reduceOnly": True, "callbackRate": "1"}]
+        self.assertEqual(self.M.check_sl_tp_orders("X", []), (False, True, 1))
+
+    def test_vi_the_dong_con_SL_closePosition_van_nhan_ra(self):
+        sl = dict(self.SL, symbol="BTC/USDT:USDT", side="sell")
+
+        class Ex:
+            def fetch_open_orders(self, *a, **k): return [sl]
+        self.M.exchange = Ex()
+        self.M.get_all_open_algo_orders_batch = lambda: []
+        kq = self.M.get_all_reduce_only_orders_by_symbol()
+        self.assertIn("BTCUSDT", kq, "🔴 SL closePosition sót lại không bị phát hiện → không có dòng ĐÓNG")
+        self.assertTrue(kq["BTCUSDT"]["has_sl"])
+        self.assertEqual(kq["BTCUSDT"]["side"], "LONG")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -29,7 +29,6 @@ Folder chỉ chạy bot (không nhận lệnh): run_tele_command = false (hoặc
 import asyncio
 import threading
 import logging
-import time
 import configparser
 import os
 import ccxt

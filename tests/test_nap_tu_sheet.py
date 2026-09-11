@@ -64,7 +64,7 @@ cancel_order_after_minutes = 30
 
 def _hop_cat(phien_ban="7"):
     d = Path(tempfile.mkdtemp(prefix="qbot_sheet_"))
-    for f in ("cst.py", "rate_guard.py", "symbol_filter.py", "config_watcher.py"):
+    for f in ("cst.py", "rate_guard.py", "config_watcher.py"):
         shutil.copy(QBOT / f, d / f)
     shutil.copy(QBOT / "sheet_config.py", d / "sheet_config_that.py")
     (d / "sheet_config.py").write_text(SHEET_GIA % (phien_ban, phien_ban, phien_ban),

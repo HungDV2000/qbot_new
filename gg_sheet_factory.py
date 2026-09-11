@@ -1,14 +1,10 @@
 import cst
 import time
-from enum import Enum
 
 spreadsheetId = cst.spreadsheet_id
 
-tab_list_all_ma = "100 mã (50 tăng và 50 giảm)"
-# Tab đối chiếu dữ liệu từ hd_update_all_new.py (logic chỉ báo mới)
-tab_list_all_ma_new = "New 100 mã (50 tăng và 50 giảm)"
+# Sheet mỗi tài khoản chỉ còn 2 tab: ĐẶT LỆNH (tên lấy từ config) và Chờ và khớp
 tab_cho_va_khop = "Chờ và khớp"
-tab_white_list = "list"
 
 tab_dat_lenh = cst.tab_dat_lenh
 
@@ -466,58 +462,6 @@ def get_cho_va_khop(range, value_render_option=None):
   
   return execute_with_retry(_execute)
   
-def get_100_ma(range):
-  RANGE_NAME = f"'{tab_list_all_ma}'!{range}"
-  if not _service_initialized or service is None or spreadsheets_service is None:
-    init_sheet_api()
-  
-  def _execute():
-    result = (
-      spreadsheets_service  # ✅ Dùng cached resource
-      .values()
-      .get(spreadsheetId=spreadsheetId, range=RANGE_NAME)
-      .execute()
-    )
-    return result.get("values", [])
-  
-  return execute_with_retry(_execute)
-  
-def get_white_list():
-    RANGE_NAME = f"'{tab_white_list}'!A1:A1000"
-    print("📡 Đang đọc whitelist từ Google Sheet (tab 'list')...", flush=True)
-    logger.info("Đang đọc whitelist từ Google Sheet (tab 'list')...")
-    if not _service_initialized or service is None or spreadsheets_service is None:
-      init_sheet_api()
-    
-    def _execute():
-        result = (
-            spreadsheets_service  # ✅ Dùng cached resource
-            .values()
-            .get(spreadsheetId=spreadsheetId, range=RANGE_NAME)
-            .execute()
-        )
-        rows = result.get("values", [])
-        whitelist = []
-        for row in rows:
-            if not row or not row[0].strip():
-                continue
-            symbol = row[0].strip().upper()
-            # Fix: Chuyển đổi format đúng
-            # Từ sheet: "BTC/USDT" → "BTC/USDT:USDT" (format Binance futures)
-            if symbol.endswith("/USDT"):
-                whitelist.append(symbol + ":USDT")
-            elif not symbol.endswith(":USDT"):
-                # Nếu chỉ có tên mã (không có /USDT), thêm /USDT:USDT
-                whitelist.append(symbol + "/USDT:USDT")
-            else:
-                whitelist.append(symbol)
-        return whitelist
-    
-    return execute_with_retry(_execute)
-
-
-
-
 def update(tab_name, array_index, value_array):
   index = 2 + array_index
   RANGE_NAME = f"'{tab_name}'!B{index}:P1000"
@@ -654,7 +598,7 @@ def update_multi(tab_name, array_index, array_2d, from_column_alphabet_name):
   else:
       index = 2 + array_index
   
-  # Fix: Mở rộng range đến cột ZZ để đủ chứa data mở rộng (100 mã tab có 53 cột A→BA)
+  # Fix: Mở rộng range đến cột ZZ để đủ chứa data mở rộng (chừa rộng cho mọi bảng)
   RANGE_NAME = f"'{tab_name}'!{from_column_alphabet_name}{index}:ZZ1000"
   
   

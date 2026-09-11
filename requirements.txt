@@ -3,7 +3,7 @@
 #
 #   pip install -r requirements.txt
 #
-# Danh sách này soát từ import THỰC TẾ trong 19 file .py của thư mục này.
+# Danh sách này soát từ import THỰC TẾ trong các file .py của thư mục này.
 # Đã bỏ so với bản cũ: pandas, numpy, gspread, oauth2client, pytz, python-dateutil,
 # pyinstaller (build .exe KHÔNG làm bot nhanh hay nhẹ hơn — cùng bytecode,
 # cùng thư viện nạp vào RAM; bản one-file còn khởi động chậm hơn).

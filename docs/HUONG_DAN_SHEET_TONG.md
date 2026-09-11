@@ -44,8 +44,8 @@ chung nhóm với sheet đặt lệnh của khách.
 Mỗi tài khoản chạy **đúng 1 lớp**. Muốn 1 / 2 / 3 lớp thì để 1 / 2 / 3 dòng có
 **Bật = Y**. Không có cột "Lớp" — sheet cũ còn cột đó thì bot tự bỏ qua.
 
-Dù 1, 2 hay 3 lớp, vẫn chạy **cùng 5 bot** bằng `./start_all_bots.sh`. Mỗi bot tự
-mở một tiến trình con cho mỗi tài khoản đang Bật (3 lớp = 5 điều phối + 15 con).
+Dù 1, 2 hay 3 lớp, vẫn chạy **cùng 6 bot** bằng `./start_all_bots.sh`. Mỗi bot tự
+mở một tiến trình con cho mỗi tài khoản đang Bật (3 lớp = 6 điều phối + 18 con).
 
 ⚠️ **Mỗi lớp phải là MỘT TÀI KHOẢN BINANCE RIÊNG** (tài khoản phụ – sub-account
 cũng được), **không phải nhiều API key của cùng một tài khoản**. Nếu dùng chung

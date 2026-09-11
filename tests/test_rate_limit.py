@@ -185,67 +185,6 @@ class TestRateGuard(unittest.TestCase):
         self.assertEqual(rate_guard.read_ttl(c), rate_guard.DEFAULT_TTL)
 
 
-class TestTracker(unittest.TestCase):
-    """order_state_tracker: đọc thì cache, GHI thì luôn tra tươi (chống ghi nhầm dòng)."""
-
-    def setUp(self):
-        import order_state_tracker as t
-        self.t = t
-        self.tracker = t.OrderStateTracker("ĐẶT LỆNH")
-        self.reads = []
-
-    def _fake_sheet(self, rows):
-        def g(rng):
-            self.reads.append(rng)
-            return rows
-        return g
-
-    def test_tra_nhieu_ma_chi_ton_1_luot(self):
-        rows = [[f"SYM{i}"] for i in range(101)]
-        with mock.patch.object(self.t.gg_sheet_factory, 'get_dat_lenh', self._fake_sheet(rows)):
-            for i in range(20):
-                self.tracker.find_symbol_row(f"SYM{i}")
-        self.assertEqual(len(self.reads), 1,
-                         f"20 mã phải tốn 1 lượt, thực tế {len(self.reads)}")
-
-    def test_ham_ghi_luon_doc_that(self):
-        """fresh=True phải bỏ qua cache — nếu không có thể GHI NHẦM DÒNG."""
-        rows = [["SYM0"]]
-        with mock.patch.object(self.t.gg_sheet_factory, 'get_dat_lenh', self._fake_sheet(rows)):
-            self.tracker.find_symbol_row("SYM0")
-            self.tracker.find_symbol_row("SYM0", fresh=True)
-            self.tracker.find_symbol_row("SYM0", fresh=True)
-        self.assertEqual(len(self.reads), 3)
-
-    def test_moi_ham_ghi_deu_khai_fresh(self):
-        """Soi bằng AST: chỉ get_current_state (ĐỌC) được dùng cache."""
-        import ast
-        tree = ast.parse(io.open('order_state_tracker.py', encoding='utf-8').read())
-        thieu = []
-        for fn in ast.walk(tree):
-            if not isinstance(fn, ast.FunctionDef) or fn.name == 'find_symbol_row':
-                continue
-            for call in ast.walk(fn):
-                if (isinstance(call, ast.Call)
-                        and getattr(call.func, 'attr', None) == 'find_symbol_row'):
-                    co_fresh = any(k.arg == 'fresh' for k in call.keywords)
-                    if fn.name != 'get_current_state' and not co_fresh:
-                        thieu.append(f"{fn.name} (dòng {call.lineno})")
-                    if fn.name == 'get_current_state' and co_fresh:
-                        thieu.append(f"get_current_state không nên fresh (dòng {call.lineno})")
-        self.assertEqual(thieu, [],
-                         f"hàm GHI dùng cache → nguy cơ GHI NHẦM DÒNG: {thieu}")
-
-    def test_het_han_thi_doc_lai(self):
-        rows = [["SYM0"]]
-        with mock.patch.object(self.t, 'ROW_CACHE_TTL', 0.05), \
-             mock.patch.object(self.t.gg_sheet_factory, 'get_dat_lenh', self._fake_sheet(rows)):
-            self.tracker.find_symbol_row("SYM0")
-            time.sleep(0.08)
-            self.tracker.find_symbol_row("SYM0")
-        self.assertEqual(len(self.reads), 2)
-
-
 class TestStagger(unittest.TestCase):
     def test_stagger_doc_duoc_tu_config(self):
         src = io.open('cst.py', encoding='utf-8').read()

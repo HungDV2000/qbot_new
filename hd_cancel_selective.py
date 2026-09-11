@@ -25,6 +25,7 @@ import cst
 import config_watcher
 import cot_nguoi_dung
 import gg_sheet_factory
+from phan_loai_lenh import kieu as _kieu, phan_loai
 import telegram_factory
 import logging
 import os
@@ -110,53 +111,6 @@ def format_symbol_ccxt(symbol):
 
 def _ma_api(symbol):
     return symbol.replace('/', '').replace(':USDT', '')
-
-
-# ── Phân loại lệnh ────────────────────────────────────────────────────────────
-
-def _dung(v):
-    return v is True or str(v).strip().lower() == 'true'
-
-
-def _info(o):
-    i = o.get('info')
-    return i if isinstance(i, dict) else {}
-
-
-def la_lenh_dong(o):
-    """Lệnh ĐÓNG vị thế (SL/TP): reduceOnly HOẶC closePosition, ở gốc hay trong info."""
-    for src in (o, _info(o)):
-        for k in ('reduceOnly', 'reduce_only', 'closePosition'):
-            if _dung(src.get(k)):
-                return True
-    return False
-
-
-def _kieu(o):
-    i = _info(o)
-    return str(o.get('orderType') or i.get('orderType') or i.get('origType')
-               or o.get('type') or i.get('type') or '').upper()
-
-
-def phan_loai(o, la_algo=False):
-    """'ENTRY' | 'SL' | 'TP' | 'UNKNOWN' — dùng chung cho lệnh thường và algo."""
-    if not la_lenh_dong(o):
-        return 'ENTRY'
-    t = _kieu(o)
-    i = _info(o)
-    try:
-        cb = float(o.get('callbackRate') or i.get('callbackRate') or o.get('priceRate') or 0)
-    except (TypeError, ValueError):
-        cb = 0.0
-    if cb > 0 or 'TRAILING' in t or 'TAKE_PROFIT' in t:
-        return 'TP'
-    if 'STOP' in t:
-        return 'SL'
-    if t == 'LIMIT':
-        return 'TP'           # hd_order_multi đặt chốt lời bằng LIMIT reduceOnly
-    if la_algo and t in ('', 'CONDITIONAL'):
-        return 'SL'           # algo điều kiện không trailing = cắt lỗ (như bản cũ)
-    return 'UNKNOWN'
 
 
 # ── Lấy / huỷ lệnh trên Binance ──────────────────────────────────────────────

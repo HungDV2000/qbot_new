@@ -17,8 +17,8 @@
 ;
 ; Sửa gì trên sheet → ĐỔI Ô B1 → bot xác minh cấu hình mới rồi tự nạp lại.
 ; Sheet tổng đọc lỗi LÚC KHỞI ĐỘNG → bot DỪNG HẲN, không dùng giá trị dự phòng.
-bot_id =
-config_spreadsheet_id =
+bot_id = QBOT01
+config_spreadsheet_id = 1M91d1ShbEeHBdpMCt3dDtS6afCmbYq-x_QPdZ61lroU
 config_reload_seconds = 300
 
 ; ── TELEGRAM (dùng chung — sheet tổng ghi đè được theo từng tài khoản) ─────────
@@ -31,7 +31,7 @@ run_tele_command = false
 ;   A = Mã   B = Đòn bẩy   D = Giá vào   F = Kiểu lệnh (1-5)   G = Phụ   H = Vốn
 ;   B2 = trạng thái LONG/SHORT/CHỜ/STOP…   D1:E2 = cấu hình vốn
 ;   J1:M2 = SỐ DƯ (bot ghi — đừng gõ tay vào đây)
-tab_dat_lenh = ĐẶT LỆNH (100 MÃ)
+tab_dat_lenh = ĐẶT LỆNH
 
 ; ── NHỊP CHẠY (giây, số nguyên dương) ─────────────────────────────────────────
 delay_vao_lenh = 60                          ; hd_order_multi — đặt lệnh + SL/TP
@@ -53,14 +53,8 @@ state_cache_ttl_sec = 10          ; ô B2 chỉ đọc thật mỗi ngần này 
 account_start_stagger_sec = 20    ; các tài khoản khởi động lệch nhau ngần này giây
 
 ; ── SỐ DƯ (hd_update_all) ─────────────────────────────────────────────────────
-; balance_only: chỉ ghi số dư vào J1:M2 tab ĐẶT LỆNH (~1 giây/vòng, rất nhẹ).
-; full: dựng lại bảng "100 mã" 58 cột — CHỈ dùng khi tab đó còn trên sheet.
-update_all_mode = balance_only
+; Ghi số dư vào tab ĐẶT LỆNH, 2 dòng × 4 cột bắt đầu từ cột này (J → J1:M2).
 balance_cell = J
-; Ba dòng dưới CHỈ có tác dụng khi update_all_mode = full
-symbol_mode = list
-symbol_list = BTC, ETH, SOL, XRP, BNB, DOGE
-top_count = 50
 
 ; ── GỢI Ý SL/TP (hd_update_cho_va_khop điền vào tab "Chờ và khớp") ──────────────
 ; Bot điền GIÁ gợi ý vào cột N (cắt lỗ) / O (chốt lời) và cờ P (cho phép) — CHỈ

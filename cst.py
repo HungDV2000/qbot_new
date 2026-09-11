@@ -508,6 +508,27 @@ import sys as _sys
 
 
 def _pid_alive(pid: int) -> bool:
+    """
+    PID còn sống không.
+
+    ⚠️ Trên Windows KHÔNG được dùng os.kill(pid, 0): Python gọi TerminateProcess
+    với mọi signal khác CTRL_C/CTRL_BREAK → GIẾT LUÔN tiến trình đang hỏi thăm.
+    Bật trùng một bot sẽ giết bot đang chạy, hoặc giết nhầm chương trình khác
+    được Windows cấp lại PID cũ.
+    """
+    if os.name == 'nt':
+        import ctypes
+        k32 = ctypes.WinDLL('kernel32', use_last_error=True)
+        h = k32.OpenProcess(0x1000, False, int(pid))    # PROCESS_QUERY_LIMITED_INFORMATION
+        if not h:
+            return ctypes.get_last_error() == 5          # ACCESS_DENIED → vẫn đang tồn tại
+        try:
+            code = ctypes.c_ulong()
+            if not k32.GetExitCodeProcess(h, ctypes.byref(code)):
+                return False
+            return code.value == 259                     # STILL_ACTIVE
+        finally:
+            k32.CloseHandle(h)
     try:
         os.kill(pid, 0)
         return True
@@ -535,7 +556,7 @@ def acquire_single_instance_lock(bot_name: str):
             raise SystemExit(
                 f"\n⛔ {bot_name} ĐANG CHẠY cho tài khoản '{account_name}' (PID {old_pid}).\n"
                 f"   Chạy thêm sẽ ĐẶT LỆNH TRÙNG → không khởi động.\n"
-                f"   Muốn chạy lại:  kill {old_pid}   rồi thử lại\n"
+                f"   Muốn chạy lại: đóng cửa sổ bot đó (Windows) / kill {old_pid} (Linux) rồi thử lại\n"
                 f"   (hoặc QBOT_NO_LOCK=1 để bỏ qua khoá — chỉ khi chắc chắn)\n"
             )
         # PID cũ đã chết → khoá mồ côi, ghi đè được
@@ -597,18 +618,6 @@ except Exception as _e:
 def account_suffix() -> str:
     """Hậu tố gắn vào tên file riêng theo tài khoản ('' nếu chế độ 1 tài khoản)."""
     return f"_{account}" if account else ""
-
-# top_count chỉ dùng khi update_all_mode = full (dựng bảng top biến động)
-top_count = config.getint('global', 'top_count', fallback=50)
-
-# ── Chọn mã lấy dữ liệu (xem symbol_filter.py) ──────────────────────────────
-#   symbol_mode = all   → top biến động như cũ (top_count)
-#   symbol_mode = list  → chỉ lấy các mã khai trong symbol_list
-import symbol_filter
-symbol_mode = symbol_filter.read_mode(config)
-symbol_list, _symbol_trung = symbol_filter.read_symbol_list(config)
-for _goc, _chuan in _symbol_trung:
-    print(f"⚠️  symbol_list: '{_goc}' trùng với mã đã khai ({_chuan}) — bỏ qua.", flush=True)
 
 # Telegram: khai chung ở [global] làm mặc định; sheet tổng ghi đè được theo tài khoản
 bot_token = config.get('global', 'bot_token', fallback='')

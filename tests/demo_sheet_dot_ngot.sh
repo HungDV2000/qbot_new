@@ -21,7 +21,7 @@ pid_cuoi(){ grep -o "CHAY tk=$1 pid=[0-9]*" "$2" | tail -1 | grep -o '[0-9]*$'; 
 
 pkill -f hd_mophong.py 2>/dev/null; sleep 1
 rm -rf "$SB"; mkdir -p "$SB"; cd "$SB" || exit 1
-cp "$QBOT"/cst.py "$QBOT"/rate_guard.py "$QBOT"/symbol_filter.py "$QBOT"/config_watcher.py \
+cp "$QBOT"/cst.py "$QBOT"/rate_guard.py "$QBOT"/config_watcher.py \
    "$QBOT"/stop_all_bots.sh "$QBOT"/status.sh .
 cp "$QBOT"/sheet_config.py sheet_config_that.py
 

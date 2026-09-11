@@ -9,9 +9,7 @@ Binance Order Helper - Xử lý các loại lệnh với fallback an toàn
 import ccxt
 import logging
 from decimal import Decimal
-from typing import Dict, Optional, Tuple
-import os
-import sys
+from typing import Dict, Tuple
 from datetime import datetime
 from pathlib import Path
 
@@ -363,13 +361,3 @@ def cancel_all_open_orders_with_retry(
         return False, len(remaining)
     except:
         return False, -1
-
-
-# Singleton instance
-_helper_instance = None
-
-def get_order_helper(exchange: ccxt.binance) -> BinanceOrderHelper:
-    global _helper_instance
-    if _helper_instance is None:
-        _helper_instance = BinanceOrderHelper(exchange)
-    return _helper_instance

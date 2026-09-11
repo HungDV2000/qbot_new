@@ -1,7 +1,11 @@
 # QBot — bản gọn
 
-Bot giao dịch Binance Futures điều khiển bằng Google Sheet.
-Bản này chỉ giữ **6 bot cần thiết**, bỏ các bot đã nghỉ.
+Bot giao dịch Binance Futures điều khiển bằng Google Sheet. Sheet của mỗi tài
+khoản chỉ còn **2 tab**: **ĐẶT LỆNH** và **Chờ và khớp**. Có **6 bot**, bật riêng
+từng cái được.
+
+📘 **Hướng dẫn chi tiết từng bot** (bật/tắt, cấu hình, ô nào đọc/ghi):
+**[docs/HUONG_DAN_TUNG_BOT.md](docs/HUONG_DAN_TUNG_BOT.md)**
 
 ---
 
@@ -19,241 +23,131 @@ Chép 3 file vào thư mục này (không có sẵn vì chứa thông tin riêng
 | `credentials.json` | Google Cloud Console (OAuth Desktop app) |
 | `token.json` | Tự sinh lần chạy đầu, sau khi đăng nhập Google |
 
-```bash
-cp config.ini.example config.ini
-```
+Soát cấu hình trước khi bật (không đặt lệnh): `python kiem_tra_cau_hinh.py`
 
 ---
 
 ## 2. SÁU BOT
 
-| Bot | Việc | Tắt được? |
+| Bot | Việc | Bắt buộc? |
 |---|---|---|
-| `hd_order_multi.py` | Đặt lệnh vào + SL/TP | Không — đây là bot chính |
-| `hd_update_cho_va_khop.py` | Cập nhật tab "Chờ và khớp" từ vị thế thật | **🔴 KHÔNG** — xem cảnh báo dưới |
-| `hd_update_all.py` | Lấy **số dư** ghi vào **J1:M2** tab ĐẶT LỆNH | Được, chỉ mất số dư trên sheet |
-| `hd_alert_possition_and_open_order.py` | Cảnh báo Telegram | Được |
-| `hd_cancel_orders_schedule.py` | Hủy lệnh VÀO treo quá lâu | Được, nhưng lệnh treo sẽ tồn mãi |
-| `hd_cancel_selective.py` | Xoá lệnh theo **tick J–M** tab "Chờ và khớp" | Được, chỉ mất tính năng tick xoá |
-
-### Xoá lệnh bằng tick J–M (tab "Chờ và khớp")
-
-Tick (checkbox TRUE, hoặc gõ `Y`/`X`/`1`) vào dòng của mã cần xoá. Trong vòng
-`cancel_selective_seconds` (mặc định 60 giây) bot xoá lệnh, **tự bỏ tick**, cập
-nhật lại G/H/I và báo Telegram.
-
-| Cột | Xoá gì |
-|---|---|
-| **J** — XOÁ ENTRY | Lệnh **vào** còn treo. **Không đụng** SL/TP |
-| **K** — XOÁ SL/TP | Cả cắt lỗ lẫn chốt lời (giữ lệnh vào) |
-| **L** — XOÁ LỆNH SÓT | Chỉ khi còn sót **một** phía (chỉ SL hoặc chỉ TP). Đủ cả hai thì không xoá |
-| **M** — XOÁ TẤT CẢ | Mọi lệnh của mã — dùng khi vị thế đã **ĐÓNG** (cột D) |
-
-⚠️ Xoá SL/TP (K/M) mà cột **P = Y** thì `hd_order_multi` sẽ **đặt lại** SL/TP ở
-vòng sau. Muốn bỏ hẳn thì đổi P thành `N` trước.
-
-Tick và giá SL/TP (J–P) **đi theo mã**: khi có vị thế mới làm thứ tự dòng đổi,
-`hd_update_cho_va_khop` dời J–P theo đúng mã (ô công thức thì đứng yên tại chỗ).
-
-### 🔴 Đừng tắt `hd_update_cho_va_khop`
-
-Nó **không phải** bot dữ liệu thị trường — nó là **nguồn cấp SL/TP**:
-
-```
-config:   leg2_source = cho_va_khop, leg2_col = N   (CẮT LỖ)
-          leg3_source = cho_va_khop, leg3_col = O   (CHỐT LỜI)
-                              ↓
-hd_order_multi đọc tab "Chờ và khớp" để biết đặt SL/TP ở giá nào
-                              ↑
-chỉ hd_update_cho_va_khop mới điền tab đó từ vị thế thật trên sàn
-```
-
-Tắt nó = vào lệnh xong **không có cắt lỗ**.
+| `hd_update_cho_va_khop.py` | Ghi tab "Chờ và khớp" từ vị thế thật, gợi ý giá SL/TP | **🔴 CÓ** — tắt là **không có cắt lỗ** |
+| `hd_order_multi.py` | Đặt lệnh vào (tab ĐẶT LỆNH) + SL/TP (tab Chờ và khớp) | **CÓ** |
+| `hd_alert_possition_and_open_order.py` | Báo Telegram khi mở/đóng vị thế, dọn lệnh sót khi đóng | Nên có |
+| `hd_cancel_selective.py` | Xoá lệnh theo **tick J–M** tab "Chờ và khớp" | Nếu dùng tick |
+| `hd_cancel_orders_schedule.py` | Huỷ lệnh VÀO treo quá lâu (không đụng SL/TP) | Tuỳ |
+| `hd_update_all.py` | Số dư → tab ĐẶT LỆNH **J1:M2** | Tuỳ |
 
 ---
 
 ## 3. CHẠY
 
+### Bật từng bot
+
+| | Windows (CMD) | Linux / macOS |
+|---|---|---|
+| Danh sách bot | `chay_bot.bat` | `./start_bot.sh` |
+| Bật cho mọi tài khoản | `chay_bot.bat hd_order_multi` | `./start_bot.sh hd_order_multi` |
+| Bật cho 1 tài khoản | `chay_bot.bat hd_order_multi kh_a` | `./start_bot.sh hd_order_multi kh_a` |
+| Dừng | Ctrl+C trong cửa sổ bot | `./stop_bot.sh hd_order_multi [kh_a]` |
+| Xem | Các cửa sổ "QBot - …" | `./status.sh` |
+
+Chạy cho "mọi tài khoản" = bot tự mở một tiến trình con cho **mỗi tài khoản đang
+Bật** trên sheet tổng; thêm/tắt tài khoản trên sheet (đổi ô B1) thì tự theo.
+
+### Bật tất cả một lúc (Linux)
+
 ```bash
-./start_all_bots.sh            # tất cả tài khoản khai trong config
-./start_all_bots.sh kh_a       # chỉ 1 tài khoản
-./status.sh                    # xem bot nào đang chạy
-./stop_all_bots.sh             # dừng
+./start_all_bots.sh     # 6 bot
+./stop_all_bots.sh      # dừng tất cả
 ```
-
-Chạy lẻ từng bot (khách tự chọn bot cần):
-
-```bash
-python3 hd_order_multi.py
-python3 hd_update_cho_va_khop.py
-python3 hd_update_all.py
-python3 hd_alert_possition_and_open_order.py
-python3 hd_cancel_orders_schedule.py
-python3 hd_cancel_selective.py
-```
-
-Chạy `python3 <bot>.py` mà **không đặt** `QBOT_ACCOUNT` thì bot tự chạy cho
-**tất cả** tài khoản đang Bật trên sheet tổng, mỗi tài khoản một tiến trình con.
 
 ---
 
-## 4. SỐ DƯ TRÊN SHEET — vùng J1:M2
+## 4. CẤU HÌNH
 
-`hd_update_all.py` ghi vào tab **ĐẶT LỆNH**, vùng **J1:M2**:
+`config.ini` chỉ chứa thông số **chung** của bot — xem chú thích từng dòng trong
+`config.ini.example` và bảng "tham số → bot" ở mục 6 của
+[docs/HUONG_DAN_TUNG_BOT.md](docs/HUONG_DAN_TUNG_BOT.md).
 
-| | J | K | L | M |
-|---|---|---|---|---|
-| **1** | Số dư ví | Ký quỹ | Lãi/lỗ mở | Cập nhật lúc |
-| **2** | `12345.67` | `2000.50` | `-50.25` | `05/09/2026 14:43:38` |
+Tài khoản (API key, sheet riêng, %SL/%TP, Telegram riêng, Bật/Tắt) nằm trên
+**sheet tổng**. Sửa trên sheet rồi **đổi ô B1** — bot tự xác minh và nạp lại, không
+cần vào VPS. Dữ liệu sửa dở (key cụt, trùng key, gõ chữ vào ô số…) thì bot **giữ
+nguyên cấu hình đang chạy** và báo Telegram. Chi tiết: `docs/HUONG_DAN_SHEET_TONG.md`.
 
-Mỗi vòng chỉ tốn **1 lượt gọi Binance + 1 lượt ghi Google**, khoảng 1 giây.
-Nhịp chạy theo `delay_update_all` (mặc định 120 giây).
-
-Đổi cột bằng `balance_cell = J` trong config.
-
----
-
-## 5. CẤU HÌNH CẦN BIẾT
-
-Toàn bộ nằm ở `[global]` trong `config.ini`.
-
-### Chế độ chạy hd_update_all
-
-```ini
-update_all_mode = balance_only    # chỉ lấy số dư (MẶC ĐỊNH, nhẹ)
-```
-
-Đặt `full` sẽ quay lại dựng bảng "100 mã" 58 cột — **chỉ dùng được nếu tab đó
-vẫn còn trên sheet**, và tốn 8 lượt gọi Binance **mỗi mã** (100 mã = 800 lượt,
-mất 1–3 phút mỗi vòng). Bản gọn không kèm `hd_update_price.py` nên chế độ
-`full` sẽ thiếu phần cập nhật giá.
-
-### Chống lỗi 429 (vượt hạn mức Google)
-
-Google chỉ cho **60 lượt đọc/phút**, dùng **chung** cho mọi tài khoản.
-
-```ini
-state_cache_ttl_sec = 10          # ô trạng thái B2 chỉ đọc thật mỗi 10 giây
-row_cache_ttl_sec = 60            # cột mã nhớ tạm 60 giây
-account_start_stagger_sec = 20    # các tài khoản khởi động lệch nhau 20 giây
-```
-
-Bấm **DỪNG** trên sheet vẫn có hiệu lực, chậm nhất sau 10 giây.
-
-Số đo thật với 3 tài khoản: **180 → 27 lượt/phút**.
-
-### Tài khoản → SHEET TỔNG
-
-`config.ini` chỉ còn thông số **chung** của bot. Danh sách tài khoản, API key,
-Google Sheet riêng, %SL/%TP từng lớp… nằm trên **sheet tổng**:
-
-```ini
-bot_id = QBOT01                   # tên tab trên sheet tổng dành cho máy này
-config_spreadsheet_id = 1AbC...   # ID sheet tổng
-config_reload_seconds = 300       # bao lâu dò ô phiên bản B1 một lần
-```
-
-Đổi key / thêm / tắt tài khoản ngay trên sheet rồi **đổi ô B1** — bot tự xác minh
-và nạp lại, không cần vào VPS. Dữ liệu sửa dở (key cụt, trùng key giữa hai tài
-khoản, gõ chữ vào ô số…) thì bot **giữ nguyên cấu hình đang chạy** và báo Telegram.
-
-Chi tiết: **`HUONG_DAN_SHEET_TONG.md`** (mục 8: sheet bị sửa đột ngột).
-
-⚠️ `test_mode` đã bỏ khỏi config — nó **chưa bao giờ có tác dụng**, đặt `true`
-bot vẫn đặt lệnh thật.
+Google chỉ cho **60 lượt đọc/phút**, dùng **chung** mọi tài khoản:
+`state_cache_ttl_sec = 10` (ô B2 đọc thật mỗi 10 giây),
+`account_start_stagger_sec = 20` (các tài khoản khởi động lệch nhau). Bấm DỪNG
+trên sheet vẫn có hiệu lực, chậm nhất sau 10 giây.
 
 Mỗi tài khoản có `logs/<tên>`, `data/<tên>`, `pids/<tên>` riêng.
 
 ---
 
-## 6. CẤU TRÚC SHEET
-
-### Tab ĐẶT LỆNH
-
-| Ô / cột | Nội dung |
-|---|---|
-| `B2` | Trạng thái: `LONG` / `SHORT` / `CHỜ` / `STOP` / `XÓA CHỜ` / `XÓA VỊ THẾ` |
-| `D1:E2` | Cấu hình vốn |
-| **`J1:M2`** | **Số dư (bot ghi)** |
-| Dòng 4–53 | Khối mã **tăng giá** (LONG) |
-| Dòng 55–104 | Khối mã **giảm giá** (SHORT) |
-| `A` `B` `D` `F` `H` | Mã · Đòn bẩy · Giá vào · Kiểu lệnh (1–5) · Vốn |
-
-### Tab "Chờ và khớp"
-
-| Cột | Nội dung |
-|---|---|
-| `D` | Đã khớp (`Y`) |
-| `N` | Giá cắt lỗ |
-| `O` | Giá chốt lời |
-| `P` | Cho phép đặt lệnh (`Y`) |
-
-Bot chỉ đặt SL/TP khi **cột D = `Y` VÀ cột P = `Y`**. Để trống ô giá thì bỏ
-qua lệnh đó.
-
----
-
-## 7. TEST
+## 5. TEST
 
 Chạy offline hoàn toàn — không mạng, không tiền thật.
 
 ```bash
-python3 -m pytest tests/ -q
+for t in tests/test_*.py; do python3 "$t"; done
+bash tests/demo_tung_bot.sh            # bật/tắt từng bot
 bash tests/demo_2_accounts.sh          # diễn tập 2 tài khoản
 bash tests/demo_3_accounts_rate.sh 90  # đo hạn mức Google với 3 tài khoản
+bash tests/demo_sheet_dot_ngot.sh      # sheet tổng bị sửa đột ngột
+bash tests/demo_doi_key.sh             # đổi key trên sheet tổng
 ```
 
 | Bộ test | Kiểm cái gì |
 |---|---|
 | `test_hd_order_multi` | Logic đặt lệnh đa kiểu |
-| `test_balance_only` | Ghi số dư đúng J1:M2, không đụng tab đã bỏ |
-| `test_rate_limit` | Đếm lượt gọi API, chống 429 |
-| `test_symbol_filter` | Chọn mã, chuẩn hoá tên, khử trùng |
-| `test_account_case` | Tên tài khoản lệch hoa/thường |
-| `test_multi_account` | Cách ly giữa các tài khoản |
-| `test_cancel_filter` | Không hủy nhầm lệnh SL/TP |
+| `test_cancel_selective` | Tick J–M: không xoá nhầm SL, xoá đúng dòng khi dòng xê dịch |
+| `test_cot_nguoi_dung` | Cột J–P đi theo mã |
+| `test_sltp_goi_y` | Gợi ý SL/TP vào N/O/P, không đè số người dùng |
+| `test_cancel_filter` | Bot huỷ theo lịch không huỷ nhầm SL/TP |
+| `test_balance_only` | Ghi số dư đúng J1:M2 |
+| `test_don_dep` | Không còn code/tab đã bỏ; khoá chống chạy trùng an toàn trên Windows |
+| `test_rate_limit` | Chống lỗi 429 |
+| `test_sheet_config`, `test_nap_tu_sheet`, `test_config_watcher`, `test_thay_doi_dot_ngot` | Sheet tổng, tự nạp lại cấu hình |
+| `test_account_case`, `test_multi_account` | Cách ly giữa các tài khoản |
 | `test_telegram_factory` | Chống trùng tin nhắn, rò bộ nhớ |
+| `test_bo_numpy` | Không nạp numpy |
 
 ---
 
-## 8. BOT ĐÃ NGHỈ (không có trong thư mục này)
+## 6. ĐÃ BỎ (không có trong thư mục này)
 
-| Bot | Vì sao bỏ |
+| Bot / module | Vì sao bỏ |
 |---|---|
-| `hd_update_price.py` | Chỉ ghi giá vào tab "100 mã" đã bỏ. Giá đã có sẵn ở cột C, và bot đặt lệnh lấy giá thẳng từ Binance |
-| `hd_track_30_prices.py` | Ghi 18 mốc giá vào cột I:Z tab ĐẶT LỆNH — **không bot nào đọc lại**. Đây cũng là bot duy nhất kéo theo `pandas` |
+| `hd_update_price.py`, chế độ `full` của `hd_update_all` | Chỉ phục vụ tab "100 mã" đã xoá |
+| `hd_track_30_prices.py` | Ghi mốc giá mà không bot nào đọc lại |
 | `hd_periodic_report.py` | Chỉ gửi báo cáo Telegram định kỳ |
-| `hd_order_123.py` | Bot multi đã tự lo SL/TP |
-| `hd_order.py`, `hd_order_limit.py` | Bản đặt lệnh cũ, thay bằng `hd_order_multi.py` |
+| `hd_order_123.py`, `hd_order.py`, `hd_order_limit.py` | Thay bằng `hd_order_multi.py` |
+| `cascade_manager.py`, `order_state_tracker.py` | Cơ chế "chuỗi lớp" đời cũ — không nơi nào kích hoạt; nay mỗi tài khoản là 1 lớp |
+| `symbol_filter.py`, `utils.py`, `binance_utils.py`, `notification_manager.py` | Chỉ phục vụ phần đã bỏ ở trên |
 
-Bản đầy đủ của chúng nằm ở `qbot_setup/` và `qbot_setup/backup/`.
+Bản đầy đủ của chúng nằm ở `qbot_setup/`.
 
 ---
 
-## 9. XỬ LÝ SỰ CỐ
+## 7. XỬ LÝ SỰ CỐ
 
 | Hiện tượng | Nguyên nhân |
 |---|---|
 | `0xc000012d` khi khởi động | Hết RAM / page file Windows. Tăng page file lên 8192 MB rồi khởi động lại máy |
 | `429 Too Many Requests` | Vượt hạn mức Google. Tăng `state_cache_ttl_sec` lên 15–20 |
-| `ModuleNotFoundError` | Thiếu file khi copy. Thư mục phải đủ **19 file `.py`** |
-| Không tìm thấy section `[tên]` | Khai trong `accounts` nhưng thiếu khối tương ứng, hoặc lệch hoa/thường |
-| Vào lệnh nhưng không có SL/TP | `hd_update_cho_va_khop` không chạy |
+| `ModuleNotFoundError` | Thiếu file khi copy — chép **toàn bộ** thư mục |
+| "⛔ … ĐANG CHẠY" | Bot đó đã chạy cho tài khoản này — đóng cửa sổ/dừng bản cũ trước |
+| Vào lệnh nhưng không có SL/TP | `hd_update_cho_va_khop` không chạy, hoặc cột P ≠ Y |
 | Đặt lệnh trùng | Hai thư mục bot cùng chạy chung API key. Khoá chống trùng chỉ có tác dụng trong từng thư mục |
-| Telegram báo *"GIỮ NGUYÊN cấu hình đang chạy"* | Dữ liệu mới trên sheet có lỗi (xem tin nhắn). Sửa rồi **đổi ô B1 thêm lần nữa** |
-| Sửa sheet mà bot không đổi | Quên đổi ô B1 |
+| Telegram báo *"GIỮ NGUYÊN cấu hình đang chạy"* | Dữ liệu mới trên sheet tổng có lỗi (xem tin nhắn). Sửa rồi **đổi ô B1 thêm lần nữa** |
+| Sửa sheet tổng mà bot không đổi | Quên đổi ô B1 |
 
-Log nằm ở `logs/<tài_khoản>/<tên_bot>.log`, lỗi ở `logs/<tài_khoản>/error.log`.
+Log: `logs/<tài_khoản>/`, lỗi ở `logs/<tài_khoản>/error.log`.
 
 ---
 
-## 10. VỀ VIỆC BUILD `.exe`
+## 8. VỀ VIỆC BUILD `.exe`
 
-**Không nên.** Build không làm bot nhanh hơn hay nhẹ hơn:
-
-- Tốc độ chạy y hệt — cùng bytecode. Bot này 99% thời gian **chờ mạng**, không phải tính toán
-- PyInstaller one-file **khởi động chậm hơn** (giải nén ra thư mục tạm mỗi lần)
-- RAM không đổi — vẫn nạp đủ `ccxt`, `googleapiclient`
-- Sửa 1 dòng phải build lại; Windows Defender hay nhận nhầm `.exe` tự build là virus
-
-Muốn nhẹ thật thì: **bớt tiến trình**, **bớt thư viện nạp thừa**, **bớt lượt gọi API**.
+**Không nên.** Build không làm bot nhanh hơn hay nhẹ hơn: cùng bytecode, cùng
+thư viện nạp vào RAM; bản one-file còn khởi động chậm hơn, sửa 1 dòng phải build
+lại, và Windows Defender hay nhận nhầm `.exe` tự build là virus.

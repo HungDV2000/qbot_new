@@ -1,25 +1,14 @@
 import cst
 import config_watcher
-from enum import Enum
 import gg_sheet_factory
-import threading
 import logging
-import subprocess
-import time
 import os
 import sys
 import ccxt
 from datetime import datetime
-import utils
-import binance_utils
 import telegram_factory
 from pathlib import Path
-from binance_order_helper import BinanceOrderHelper, cancel_all_open_orders_with_retry
-import requests
-import hmac
-import hashlib
-import urllib.parse
-import json
+from binance_order_helper import BinanceOrderHelper
 from googleapiclient.errors import HttpError  # ✅ Thêm import HttpError để handle lỗi Google API
 from binance_futures_direct import fetch_algo_orders_for_symbol, resync_exchange_time
 
@@ -87,83 +76,6 @@ except Exception as e:
 # Khởi tạo order helper
 order_helper = BinanceOrderHelper(exchange)
 
-# ===================================================================
-# LOCAL ORDER CACHE - Chống lặp đơn khi Binance API lỗi/timeout
-# Cache lưu {symbol: {'algo_id': str, 'placed_at': float}}
-# Được persist vào file để giữ qua lần restart bot
-# ===================================================================
-_order_cache: dict = {}
-_cache_lock = threading.Lock()
-_CACHE_FILE = cst.account_dir('data') / 'order_cache_multi.json'  # [MULTI-ACC]
-_CACHE_TTL_SECONDS = 86400  # 24 giờ - thời gian order còn có thể valid
-
-
-def _load_order_cache():
-    """Load cache từ file JSON khi bot khởi động"""
-    global _order_cache
-    try:
-        _CACHE_FILE.parent.mkdir(exist_ok=True)
-        if _CACHE_FILE.exists():
-            with open(_CACHE_FILE, 'r', encoding='utf-8') as f:
-                _order_cache = json.load(f)
-            logger.info(f"[CACHE] Đã load {len(_order_cache)} entries từ {_CACHE_FILE}")
-            print(f"✅ [CACHE] Đã load {len(_order_cache)} symbol từ cache file", flush=True)
-        else:
-            _order_cache = {}
-            logger.info("[CACHE] Chưa có cache file, khởi tạo rỗng")
-    except Exception as e:
-        logger.error(f"[CACHE] Lỗi load cache: {e}", exc_info=True)
-        _order_cache = {}
-
-
-def _save_order_cache():
-    """Lưu cache ra file JSON (gọi bên trong _cache_lock)"""
-    try:
-        _CACHE_FILE.parent.mkdir(exist_ok=True)
-        with open(_CACHE_FILE, 'w', encoding='utf-8') as f:
-            json.dump(_order_cache, f, ensure_ascii=False, indent=2)
-    except Exception as e:
-        logger.error(f"[CACHE] Lỗi save cache: {e}", exc_info=True)
-
-
-def add_to_order_cache(symbol: str, algo_id: str):
-    """Thêm order vừa đặt thành công vào cache"""
-    with _cache_lock:
-        _order_cache[symbol] = {
-            'algo_id': str(algo_id),
-            'placed_at': time.time()
-        }
-        _save_order_cache()
-    logger.info(f"[CACHE] Đã thêm {symbol} (algoId={algo_id}) vào cache")
-
-
-def remove_from_order_cache(symbol: str):
-    """Xóa symbol khỏi cache khi API xác nhận không còn order"""
-    with _cache_lock:
-        if symbol in _order_cache:
-            del _order_cache[symbol]
-            _save_order_cache()
-            logger.info(f"[CACHE] Đã xóa {symbol} khỏi cache (API xác nhận hết order)")
-
-
-def is_in_order_cache(symbol: str) -> tuple:
-    """
-    Kiểm tra symbol có trong cache và còn hiệu lực không.
-    Returns: (True/False, algo_id hoặc None)
-    """
-    with _cache_lock:
-        if symbol not in _order_cache:
-            return False, None
-        entry = _order_cache[symbol]
-        age = time.time() - entry.get('placed_at', 0)
-        if age > _CACHE_TTL_SECONDS:
-            del _order_cache[symbol]
-            _save_order_cache()
-            logger.info(f"[CACHE] {symbol} đã hết hạn cache ({age/3600:.1f}h), xóa")
-            return False, None
-        return True, entry.get('algo_id')
-
-
 def is_same_pair(sym1, sym2):
     """
     So sánh 2 symbols có giống nhau không (bỏ qua format)
@@ -188,21 +100,6 @@ def get_algo_orders_for_symbol(symbol):
     except Exception as e:
         logger.error(f"Lỗi khi lấy algo orders cho {symbol}: {e}", exc_info=True)
         return None
-
-def cancel_all_open_orders(symbol):
-    open_orders = exchange.fetch_open_orders(symbol)
-
-    if open_orders:
-        for order in open_orders:
-            order_id = order['id']
-            cancel_result = exchange.cancel_order(order_id, symbol)
-            print(f"Hủy lệnh {order_id} kết quả: {cancel_result}", flush=True)
-            msg = f"Đã Hủy lệnh Chờ: {order['symbol']}"
-            telegram_factory.send_tele(msg,cst.chat_id, True , True)
-    else:
-        print(f"Không có lệnh mở nào cho {symbol}", flush=True)
-
-
 
 def normalize_symbol(symbol):
     """
@@ -282,24 +179,6 @@ def is_symbol_tradeable(symbol):
         logger.error(f"Lỗi khi kiểm tra tradeable cho {symbol}: {e}", exc_info=True)
         return False, f"Lỗi kiểm tra: {str(e)}", symbol
 
-def has_position(sym):
-    """Kiểm tra symbol đã có vị thế (đã vào lệnh) chưa"""
-    try:
-        balance = exchange.fetch_balance()
-        if not balance or 'info' not in balance:
-            logger.warning(f"fetch_balance() trả về dữ liệu không hợp lệ cho {sym}")
-            return False
-        positions = balance['info'].get('positions', [])
-        for position in positions:
-            symbol = position.get('symbol', '')
-            position_amt = position.get('positionAmt', '0')
-            if is_same_pair(symbol, sym) and float(position_amt) != 0:
-                return True
-        return False
-    except Exception as e:
-        logger.error(f"Lỗi khi kiểm tra vị thế cho {sym}: {e}", exc_info=True)
-        return False
-
 def get_position_amt(sym):
     """
     Trả về positionAmt (signed float) của symbol.
@@ -317,111 +196,6 @@ def get_position_amt(sym):
             return float(position.get('positionAmt', '0') or 0)
     return 0.0
 
-def has_pending_reverse_limit_order(symbol, reverse_side):
-    """
-    Kiểm tra đã có LỆNH NGƯỢC (LIMIT reduce_only) cùng side chưa.
-    reverse_side: side của lệnh ngược (LONG->'sell', SHORT->'buy').
-    Raise nếu API lỗi → caller bỏ qua dòng (tránh đặt trùng lệnh ngược).
-    """
-    open_orders = exchange.fetch_open_orders(symbol)
-    if not open_orders:
-        return False
-    for order in open_orders:
-        o_type = str(order.get('type', '')).upper()
-        o_side = str(order.get('side', '')).lower()
-        info = order.get('info', {}) if isinstance(order.get('info'), dict) else {}
-        reduce_only = order.get('reduceOnly', False) or info.get('reduceOnly', False) \
-            or str(info.get('reduceOnly', 'false')).lower() == 'true'
-        if o_type == 'LIMIT' and o_side == reverse_side.lower() and reduce_only:
-            return True
-    return False
-
-def has_pending_stop_market_order(symbol, sl_side):
-    """
-    Kiểm tra đã có LỆNH CẮT LỖ (STOP_MARKET reduce_only) cùng side chưa.
-    sl_side: side của lệnh cắt lỗ (LONG->'sell', SHORT->'buy').
-    Raise nếu API lỗi → caller bỏ qua để tránh đặt trùng lệnh SL.
-    """
-    open_orders = exchange.fetch_open_orders(symbol)
-    if not open_orders:
-        return False
-    for order in open_orders:
-        o_type = str(order.get('type', '')).upper()
-        o_side = str(order.get('side', '')).lower()
-        info = order.get('info', {}) if isinstance(order.get('info'), dict) else {}
-        reduce_only = order.get('reduceOnly', False) or info.get('reduceOnly', False) \
-            or str(info.get('reduceOnly', 'false')).lower() == 'true'
-        # STOP_MARKET (CCXT có thể trả 'STOP_MARKET' hoặc 'STOP')
-        if 'STOP' in o_type and o_side == sl_side.lower() and reduce_only:
-            return True
-    return False
-
-def has_pending_limit_order(symbol, side):
-    """
-    Kiểm tra symbol đã có OPEN LIMIT ORDER (lệnh vào) cùng chiều chưa.
-
-    Lệnh LIMIT là open order thường (không phải algo order), nên phải dùng
-    fetch_open_orders() thay vì fetch_algo_orders.
-
-    Chỉ tính lệnh entry (reduceOnly=False) cùng side → bỏ qua lệnh ngược
-    reduce_only do bot khác đặt.
-
-    Fail-safe (giống bản trailing stop):
-    - API OK + có limit entry cùng side → CHẶN
-    - API OK + không có → CHO PHÉP (xóa cache)
-    - API lỗi (Exception) + có cache → CHẶN
-    - API lỗi (Exception) + không cache → CHO PHÉP (tránh chặn oan do timeout)
-    """
-    try:
-        logger.info(f"[CHECK PENDING] {symbol}: Đang kiểm tra open LIMIT orders (side={side})...")
-        open_orders = exchange.fetch_open_orders(symbol)
-
-        # ── API THÀNH CÔNG + KHÔNG CÓ ORDERS ───────────────────────────
-        if not open_orders:
-            remove_from_order_cache(symbol)  # Xóa cache lỗi thời nếu có
-            logger.info(f"[CHECK PENDING] {symbol}: Không có open orders → Cho phép tạo lệnh mới")
-            return False
-
-        # ── API THÀNH CÔNG + CÓ ORDERS → Lọc LIMIT entry cùng side ─────
-        matched = []
-        for order in open_orders:
-            o_type = str(order.get('type', '')).upper()
-            o_side = str(order.get('side', '')).lower()
-            # reduceOnly có thể nằm ở top-level hoặc trong info
-            info = order.get('info', {}) if isinstance(order.get('info'), dict) else {}
-            reduce_only = order.get('reduceOnly', False) or info.get('reduceOnly', False) \
-                or str(info.get('reduceOnly', 'false')).lower() == 'true'
-
-            if o_type == 'LIMIT' and o_side == side.lower() and not reduce_only:
-                matched.append(order.get('id', 'N/A'))
-
-        if matched:
-            logger.info(f"✅ {symbol} đã có {len(matched)} LIMIT entry order(s) cùng side {side}: {matched}")
-            print(f"⏭️  {symbol} đã có {len(matched)} lệnh LIMIT chờ (side={side}), bỏ qua", flush=True)
-            return True
-
-        # Có open orders nhưng không phải LIMIT entry cùng side (vd lệnh ngược reduce_only)
-        remove_from_order_cache(symbol)
-        logger.info(f"[CHECK PENDING] {symbol}: Không có LIMIT entry cùng side {side} → Cho phép tạo lệnh mới")
-        return False
-
-    except Exception as e:
-        logger.error(f"Lỗi khi kiểm tra open orders cho {symbol}: {e}", exc_info=True)
-        in_cache, cached_algo_id = is_in_order_cache(symbol)
-        if in_cache:
-            logger.warning(f"[CHECK PENDING] {symbol}: API lỗi + có cache (id={cached_algo_id}) → CHẶN")
-            print(f"⛔ {symbol}: Lỗi kiểm tra + có cache → CHẶN để tránh lặp đơn", flush=True)
-            return True
-        logger.warning(f"[CHECK PENDING] {symbol}: API lỗi + không cache → cho phép đặt lệnh")
-        return False
-
-def execute_command(commands):
-    try:
-        
-        subprocess.run(commands, shell=True, check=True)
-    except Exception as e:
-        print(e, flush=True)
-
 def is_number(s):
     try:
         float(s)
@@ -433,14 +207,6 @@ STATE_STOP = "STOP"
 STATE_SHORT = "SHORT"
 STATE_LONG  = "LONG"
 STATE_CHO  = "CHỜ"
-LENH_CHO = "LỆNH CHỜ"
-
-# ===================================================================
-# CHẾ ĐỘ ĐẶT LỆNH NGƯỢC:
-#   Không dùng ô công tắc riêng. Cơ chế bật/tắt theo TỪNG DÒNG:
-#     - Cột G (TP) CÓ giá  → bot đặt lệnh ngược (chốt lời) cho dòng đó
-#     - Cột G (TP) TRỐNG   → bot chỉ đặt lệnh 1 (không đặt lệnh ngược)
-# ===================================================================
 
 # ══════════════════════════════════════════════════════════════════════════════
 # CACHE TRẠNG THÁI B2 — CHỐNG LỖI 429 (vượt hạn mức Google Sheets)
@@ -829,18 +595,6 @@ def _snapshot_find(snap, family, side, reduce_only, price, tol=None):
                 return s_
     return None
 
-
-def _snapshot_has(snap, family, side, reduce_only, price, tol=None):
-    """Đã có lệnh cùng loại/chiều/reduce_only (và gần đúng giá) trong snapshot chưa."""
-    if tol is None:
-        tol = _DEDUP_TOL
-    for s in snap:
-        if s['family'] == family and s['side'] == side and s['reduce_only'] == reduce_only:
-            if price is None or s['price'] is None:
-                return True
-            if s['price'] > 0 and abs(s['price'] - price) / s['price'] <= tol:
-                return True
-    return False
 
 def plan_row(legs, d, pos_amt, snap, algo_ok, capital, last_price, entry_side,
              round_price=None, round_amount=None, allow_dca=False,
@@ -1381,7 +1135,7 @@ def _do_entry_phase():
 def do_it():
     """
     Điều phối 2 pha mỗi vòng quét:
-      PHA A — Lệnh VÀO: quét tab "ĐẶT LỆNH (100 MÃ)" theo trạng thái B2 (LONG/SHORT),
+      PHA A — Lệnh VÀO: quét tab "ĐẶT LỆNH" theo trạng thái B2 (LONG/SHORT),
               đồng thời xử lý các lệnh điều khiển STOP / XÓA CHỜ / XÓA VỊ THẾ / CHỜ.
       PHA B — SL/TP:    quét tab "Chờ và khớp" (vị thế thực tế đang mở).
               Bỏ qua khi B2 đang STOP/XÓA (lúc đó hệ thống đang dọn dẹp).
@@ -1457,9 +1211,6 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"⚠️ Lỗi khởi tạo Google Sheets API: {e}", flush=True)
         logger.error(f"Lỗi khởi tạo Google Sheets API: {e}", exc_info=True)
-
-    # ✅ Load order cache từ file (chống lặp đơn qua restart)
-    _load_order_cache()
 
     # ✅ Load cấu hình các leg từ config.ini (đọc 1 lần lúc khởi động - đổi config phải restart)
     LEGS = load_legs()

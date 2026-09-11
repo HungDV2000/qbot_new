@@ -2,7 +2,6 @@ import ccxt
 from binance_futures_direct import resync_exchange_time  # [Fix1] chống clock drift -1021
 import cst
 import config_watcher
-from pathlib import Path
 import time
 import telegram_factory
 import logging

@@ -1,21 +1,23 @@
+"""
+hd_alert_possition_and_open_order — CẢNH BÁO vị thế qua Telegram.
+
+Mỗi `delay_calert_possition_and_open_order` giây so danh sách vị thế với lần trước:
+  • Vị thế MỚI mở   → Telegram "Đã Thêm Vị Thế"
+  • Vị thế vừa ĐÓNG → Telegram "Đã Đóng Vị Thế | PNL" rồi HUỶ MỌI LỆNH còn treo
+                      của mã đó (SL/TP sót, lệnh vào chưa khớp) — thử lại 3 lần.
+Không đọc/ghi Google Sheet.
+"""
 import ccxt
 from binance_futures_direct import resync_exchange_time  # [Fix1] chống clock drift -1021
 import cst
 import config_watcher
-import gg_sheet_factory
 import logging
-import time
 from datetime import datetime
-from pathlib import Path
-import utils
 import telegram_factory
 import os
-from binance_order_helper import cancel_all_open_orders_with_retry, BinanceOrderHelper
-from cascade_manager import get_cascade_manager
-from order_state_tracker import get_tracker
-from notification_manager import get_notification_manager
+from binance_order_helper import cancel_all_open_orders_with_retry
 
-file_name = os.path.basename(os.path.abspath(__file__))  
+file_name = os.path.basename(os.path.abspath(__file__))
 os.system(f"title {file_name} - {cst.key_name}")
 
 # Tạo thư mục logs/ nếu chưa có
@@ -43,7 +45,7 @@ logger.addHandler(file_handler)
 exchange_id = 'binance'
 exchange_class = getattr(ccxt, exchange_id)
 exchange = exchange_class({
-    'enableRateLimit': True,  
+    'enableRateLimit': True,
     'apiKey': cst.key_binance,
     'secret': cst.secret_binance,
     'options': {
@@ -55,27 +57,26 @@ exchange = exchange_class({
 })
 exchange.setSandboxMode(False)
 
-# Khởi tạo order helper, cascade manager và notification manager
-order_helper = BinanceOrderHelper(exchange)
-cascade_mgr = get_cascade_manager(exchange, order_helper)
-notif_mgr = get_notification_manager(cst.chat_id)
+
+def _gui(msg):
+    try:
+        telegram_factory.send_tele(msg, cst.chat_id, True, True)
+    except Exception as e:
+        logger.error(f"Lỗi gửi Telegram: {e}")
 
 
+def bao_vi_the_mo(symbol):
+    _gui(f"✅ Đã Thêm Vị Thế: {symbol}")
 
-def get_all_open_orders_with_single_order():
-    res = []
-    
-    for sym in  utils.get_all_open_orders_symbol_local():
-        print(sym, flush=True)
-        
-        
-        orders = exchange.fetch_open_orders(symbol=sym)
-        if len(orders) == 1:
-            res.append(orders[0])
-        
-        for order in orders:
-            print(f"Symbol: {order['symbol']}, ID: {order['id']}, Status: {order['status']}, Amount: {order['amount']}, Price: {order['price']}", flush=True)
-    return res
+
+def bao_vi_the_dong(symbol, pnl=None):
+    # pnl = lãi/lỗ CHƯA chốt ở lần quét trước khi đóng → chỉ là ước tính
+    if pnl is not None:
+        emoji = "💰" if pnl >= 0 else "💸"
+        _gui(f"{emoji} Đã Đóng Vị Thế: {symbol} | PNL ~ ${pnl:.2f}")
+    else:
+        _gui(f"Đã Đóng Vị Thế: {symbol}")
+
 
 def get_opened_possition():
     """
@@ -83,38 +84,30 @@ def get_opened_possition():
     ✅ SỬ DỤNG fetch_positions() thay vì fetch_balance() để có entryPrice!
     """
     try:
-        # ✅ FIX: Dùng fetch_positions() thay vì fetch_balance()['info']['positions']
-        # Vì fetch_balance() KHÔNG trả về entryPrice trong raw data!
         positions = exchange.fetch_positions()
         logger.info(f"✅ Đã lấy {len(positions)} positions từ fetch_positions()")
     except Exception as e:
         logger.error(f"Lỗi khi lấy positions: {e}", exc_info=True)
         return []
-    
+
     opened_possition = []
-    
+
     for position in positions:
         try:
-            # CCXT fetch_positions() trả về format khác:
-            # - 'contracts' (luôn dương) thay vì 'positionAmt' (có thể âm/dương)
-            # - 'side' = "long" hoặc "short"
-            # - 'symbol' = "HOME/USDT:USDT" (đã format sẵn)
-            # - CÓ 'entryPrice' và 'leverage'!
-            
+            # CCXT: 'contracts' luôn dương, 'side' = long/short, symbol = "HOME/USDT:USDT"
             contracts = float(position.get('contracts', 0))
             if contracts == 0:
                 continue  # Bỏ qua position rỗng
-            
+
             side = position.get('side', '').lower()
             symbol_ccxt = position['symbol']  # "HOME/USDT:USDT"
-            
+
             # Convert về format "HOMEUSDT" để tương thích với code hiện tại
             symbol = symbol_ccxt.replace('/', '').replace(':USDT', '')
-            
+
             # Convert contracts + side thành position_amt (âm nếu short, dương nếu long)
             position_amt = contracts if side == 'long' else -contracts
-            
-            # Parse entry price - fetch_positions() CÓ entryPrice!
+
             entry_price_raw = position.get('entryPrice')
             if entry_price_raw is not None and entry_price_raw != '' and entry_price_raw != 0:
                 try:
@@ -125,8 +118,7 @@ def get_opened_possition():
             else:
                 entry_price = 0.0
                 logger.warning(f"{symbol}: entryPrice rỗng hoặc = 0, raw: {entry_price_raw}")
-            
-            # Parse unrealized PnL
+
             unrealized_pnl_raw = position.get('unrealizedPnl', position.get('unrealizedProfit', 0))
             if unrealized_pnl_raw is not None and unrealized_pnl_raw != '':
                 try:
@@ -135,8 +127,7 @@ def get_opened_possition():
                     unrealized_pnl = 0.0
             else:
                 unrealized_pnl = 0.0
-            
-            # Parse leverage - fetch_positions() CÓ leverage!
+
             leverage_raw = position.get('leverage')
             if leverage_raw is not None and leverage_raw != '' and leverage_raw != 0:
                 try:
@@ -145,42 +136,40 @@ def get_opened_possition():
                     leverage = 1
             else:
                 leverage = 1
-            
-            # Tạo position dict với format tương thích với code hiện tại
-            position_dict = {
+
+            opened_possition.append({
                 'symbol': symbol,  # Format "HOMEUSDT"
                 'positionAmt': str(position_amt),
                 'entryPrice': entry_price,
                 'unrealizedProfit': unrealized_pnl,
                 'leverage': leverage
-            }
-            
-            opened_possition.append(position_dict)
+            })
             print(f"Symbol: {symbol}, Position: {position_amt}, Entry Price: {entry_price}, Unrealized PnL: {unrealized_pnl}, Leverage: {leverage}", flush=True)
-            logger.debug(f"Position: {symbol}, Amt={position_amt}, Entry={entry_price}, PnL={unrealized_pnl}, Lev={leverage}")
-            
+
         except Exception as e:
             logger.error(f"Lỗi khi xử lý position {position.get('symbol', 'N/A')}: {e}", exc_info=True)
             continue
-            
+
     return opened_possition
+
 
 result_old = []
 is_first_time = True
+
 
 def cancel_all_open_orders(symbol):
     """
     Hủy tất cả lệnh chờ với retry mechanism
     """
     logger.info(f"Bắt đầu hủy lệnh chờ cho {symbol}...")
-    
+
     success, remaining = cancel_all_open_orders_with_retry(
         exchange=exchange,
         symbol=symbol,
         max_retries=3,
         delay=2
     )
-    
+
     if success:
         msg = f"✅ <b>ĐÃ HỦY LỆNH CHỜ</b>\n\n<b>Mã:</b> {symbol}\n<b>Trạng thái:</b> Đã xóa sạch tất cả lệnh"
         telegram_factory.send_tele(msg, cst.chat_id, True, True)
@@ -190,166 +179,41 @@ def cancel_all_open_orders(symbol):
         telegram_factory.send_tele(msg, cst.chat_id, True, True)
         logger.critical(f"🔴 Không thể hủy lệnh cho {symbol}!")
 
+
 def do_it():
-    global result_old, is_first_time  
+    global result_old, is_first_time
 
     print(f"{datetime.now()}. hd_alert_possition_and_open_order----------------------------------------------------", flush=True)
 
     res = get_opened_possition()
     print(f"Tổng Lệnh: {len(res)}", flush=True)
-    print(res, flush=True)
 
-    
-    
-    
-
+    # Lần đầu chỉ ghi nhớ, không báo (tránh báo tràn mọi vị thế đang có)
     if is_first_time:
         result_old = res
         is_first_time = False
         return
 
-        
-    
+    ma_moi = {item["symbol"] for item in res}
+    ma_cu = {item["symbol"] for item in result_old}
 
-
-    
     for item in res:
-        is_contain = False
-        for item_old in result_old:
-            if item["symbol"] == item_old["symbol"]:
-                is_contain = True
-                break
-
-        if not is_contain:
-            print(f"phần tử mới được thêm vào: {item}", flush=True)
+        if item["symbol"] not in ma_cu:
             symbol = item['symbol']
             logger.info(f"✅ Position mới mở: {symbol} - Entry: {item.get('entryPrice', 'N/A')} - Amount: {item.get('positionAmt', 'N/A')} - Leverage: {item.get('leverage', 'N/A')}")
-            notif_mgr.send_position_opened(symbol)
+            bao_vi_the_mo(symbol)
 
-
-    
     for item_old in result_old:
-        is_contain = False
-        for item in res:
-            if item["symbol"] == item_old["symbol"]:
-                is_contain = True
-                break
-
-        if not is_contain:
-            print(f"phần tử cũ được bỏ đi: {item_old}", flush=True)
+        if item_old["symbol"] not in ma_moi:
             symbol = item_old['symbol']
-            
-            # Detect TP hay SL bằng cách check PnL
-            pnl = float(item_old.get('unrealizedProfit', 0))
-            is_tp = pnl > 0  # Profit = TP, Loss = SL
-            
-            # Lấy state hiện tại từ sheet để biết đang ở lớp nào
-            try:
-                # Xác định side dựa trên position_amt
-                position_amt = float(item_old.get('positionAmt', 0))
-                side = "LONG" if position_amt > 0 else "SHORT"
-                
-                tracker = get_tracker(side)
-                state = tracker.get_current_state(
-                    symbol=symbol,
-                    # Bố cục sheet: KHỐI TRÊN (4-53) = LONG, KHỐI DƯỚI (55-104) = SHORT.
-                    # Trước đây đảo ngược → tìm sai vùng, get_current_state luôn rỗng
-                    # nên nhánh cascade TP/SL không bao giờ chạy.
-                    start_row=4 if side == "LONG" else 55,
-                    end_row=53 if side == "LONG" else 104
-                )
-                
-                if state and state.get('order_code'):
-                    order_code = state['order_code']
-                    # Parse layer từ order_code (VD: "1a" -> layer 1)
-                    try:
-                        layer_num = int(order_code[0])
-                    except:
-                        layer_num = 1
-                    
-                    # Xử lý theo TP/SL
-                    if is_tp:
-                        logger.info(f"💰 TP khớp cho {symbol} lớp {layer_num} - Entry: {item_old.get('entryPrice', 'N/A')} - PnL: {pnl:.2f}")
-                        cascade_mgr.on_tp_filled(symbol, layer_num)
-                    else:
-                        logger.info(f"🛑 SL khớp cho {symbol} lớp {layer_num} - Entry: {item_old.get('entryPrice', 'N/A')} - PnL: {pnl:.2f}")
-                        cascade_mgr.on_sl_filled(symbol, layer_num)
-                    
-                    # Gửi thông báo đóng vị thế
-                    notif_mgr.send_position_closed(symbol, pnl)
-                    
-                else:
-                    # Không có state, chỉ báo đóng position thông thường
-                    notif_mgr.send_position_closed(symbol)
-                    
-            except Exception as e:
-                logger.error(f"Lỗi xử lý TP/SL cho {symbol}: {e}", exc_info=True)
-                notif_mgr.send_position_closed(symbol)
-
-            # Hủy tất cả lệnh chờ
+            pnl = float(item_old.get('unrealizedProfit', 0) or 0)
+            logger.info(f"🔚 Position đã đóng: {symbol} - Entry: {item_old.get('entryPrice', 'N/A')} - PnL ước tính: {pnl:.2f}")
+            bao_vi_the_dong(symbol, pnl)
+            # Hủy tất cả lệnh chờ còn sót của mã vừa đóng
             cancel_all_open_orders(symbol)
-
 
     result_old = res
 
-
-    
-    
-    
-    
-
-    
-    
-    
-    
-    
-    
-    
-
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-
-    
-    
-    
-
-    
-    
-    
-    
-    
-    
-    
-
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-
-    
-    
 
 while True:
     try:
@@ -360,7 +224,4 @@ while True:
             resync_exchange_time(exchange, min_interval=0)  # [Fix4] ép resync ccxt ngay
         print(f"Tổng Lỗi: {e}", flush=True)
         logger.error(f"Tổng lỗi: {e}", exc_info=True)
-        import traceback
-        traceback.print_exc()
-
     config_watcher.ngu(cst.delay_calert_possition_and_open_order)   # nghỉ + dò cấu hình

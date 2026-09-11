@@ -244,6 +244,7 @@ Hệ thống gồm nhiều bot nhỏ, mỗi bot làm một việc. **Mỗi tài 
 | Bot | Làm gì | Bắt buộc? |
 |-----|--------|-----------|
 | `hd_cancel_orders_schedule.py` | Hủy **lệnh vào** treo quá lâu (mặc định 30 phút). **Không đụng SL/TP** | Nên có |
+| `hd_cancel_selective.py` | Xoá lệnh theo tick cột J–M tab "Chờ và khớp" (xem README) | Tuỳ |
 | `hd_alert_possition_and_open_order.py` | Cảnh báo qua Telegram khi vị thế đóng / có biến động | Tuỳ |
 
 ### 🔹 Nhóm 4 — CÔNG CỤ THỦ CÔNG (không chạy tự động)
@@ -257,7 +258,9 @@ Hệ thống gồm nhiều bot nhỏ, mỗi bot làm một việc. **Mỗi tài 
 | `hd_update_all_new.py` | Bản thử nghiệm của `hd_update_all` |
 
 Bản gọn không kèm công cụ thủ công. Cần dùng thì lấy từ `qbot_setup/`, nhớ đặt `QBOT_ACCOUNT` để chạy đúng tài khoản:
-`QBOT_ACCOUNT=kh_a python3 hd_cancel_selective.py`
+`QBOT_ACCOUNT=kh_a python3 hd_isolated_crossed_converter.py`
+
+(`hd_cancel_selective.py` nay đã là bot chạy tự động trong `start_all_bots.sh` — không cần chạy tay.)
 
 ---
 
@@ -273,17 +276,16 @@ Chỉ 2 bot này là giao dịch được. Các bot khác bổ sung dữ liệu 
 ### 🔗 Bot nào cần bot nào
 
 ```
-hd_update_all.py  ──ghi──►  tab "100 mã"  ──►  (người dùng chọn mã)
-                                                      │
-                                                      ▼
-                                            tab "ĐẶT LỆNH (100 MÃ)"
-                                                      │
-                                              hd_order_multi ──đặt lệnh──► Binance
-                                                      ▲                      │
-                                                      │                      ▼
-hd_update_cho_va_khop.py  ──ghi──►  tab "Chờ và khớp" ◄──── đọc vị thế thực tế
-                                     (bot đặt lệnh đọc tab này để đặt SL/TP)
+người dùng điền mã ──►  tab "ĐẶT LỆNH"
+                              │
+                      hd_order_multi ──đặt lệnh──► Binance
+                              ▲                      │
+                              │                      ▼
+hd_update_cho_va_khop.py ──ghi──► tab "Chờ và khớp" ◄── đọc vị thế thực tế
+                         (bot đặt lệnh đọc tab này để đặt SL/TP)
 ```
+
+Chi tiết từng bot: `docs/HUONG_DAN_TUNG_BOT.md`.
 
 ---
 
