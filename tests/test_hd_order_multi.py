@@ -55,7 +55,8 @@ def _install_mocks():
     _mod("cst", key_name="TEST", key_binance="x", secret_binance="y", chat_id="0",
          delay_vao_lenh=60, run_tele_command=False, config=cfg,
          accounts=[], account="", account_name="default",
-         account_dir=_account_dir, account_suffix=lambda: "")
+         account_dir=_account_dir, account_suffix=lambda: "",
+         bao_nhip=lambda *a, **k: None)
 
     class _FakeHelper:
         def __init__(self, *a, **k): pass

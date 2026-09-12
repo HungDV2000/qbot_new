@@ -1208,6 +1208,7 @@ def printf(name, data):
 if __name__ == "__main__":
     print(f"🚀 Khởi động bot - Chạy mỗi {cst.delay_vao_lenh} giây", flush=True)
     logger.info(f"Khởi động bot - Chạy mỗi {cst.delay_vao_lenh} giây")
+    cst.bao_nhip('delay_vao_lenh', cst.delay_vao_lenh)
 
     # ✅ Khởi tạo Google Sheets API trước khi bắt đầu
     print("🔄 Đang khởi tạo Google Sheets API...", flush=True)

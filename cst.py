@@ -693,7 +693,27 @@ delay_cho_va_khop = _get_time_setting('delay_cho_va_khop', minimum=1, warn_below
 delay_update_all = _get_time_setting('delay_update_all', minimum=1, warn_below=15)
 delay_calert_possition_and_open_order = _get_time_setting('delay_calert_possition_and_open_order', minimum=1, warn_below=15)
 
-cancel_orders_minutes = _get_time_setting('cancel_orders_minutes', minimum=1, unit='phút')
+# Bot huỷ lệnh treo: khai bằng GIÂY (cancel_orders_seconds) hoặc PHÚT
+# (cancel_orders_minutes — cách cũ). Rất dễ nhầm: điền 60 vào dòng PHÚT với ý
+# "60 giây" thì bot 1 TIẾNG mới quét 1 lần. Khai cả hai thì GIÂY thắng.
+if config.get('global', 'cancel_orders_seconds', fallback='').strip():
+    cancel_orders_seconds = _get_time_setting('cancel_orders_seconds', minimum=5,
+                                              warn_below=30)
+    cancel_orders_minutes = cancel_orders_seconds / 60.0
+else:
+    cancel_orders_minutes = _get_time_setting('cancel_orders_minutes', minimum=1, unit='phút')
+    cancel_orders_seconds = cancel_orders_minutes * 60
+
+
+def bao_nhip(ten_tham_so, giay):
+    """In rõ nhịp chạy + FILE CONFIG đang dùng.
+
+    Hay gặp: sửa config.ini mà bot "không nhận" — vì sửa nhầm thư mục khác, hoặc
+    vì bot đang chạy (config.ini chỉ đọc lúc khởi động).
+    """
+    print(f"⏱️  Nhịp chạy: {giay:g} giây  ({ten_tham_so})", flush=True)
+    print(f"   Config đang dùng: {os.path.abspath(config_file)}", flush=True)
+    print(f"   Sửa config.ini xong phải TẮT rồi BẬT LẠI bot mới có tác dụng.", flush=True)
 
 # Telegram command bot: True = folder này chạy listener (nhận lệnh); False = chỉ chạy hd_order, không nhận lệnh
 # Mặc định False: nếu config.ini chưa có run_tele_command thì không chạy (tránh bật nhầm)

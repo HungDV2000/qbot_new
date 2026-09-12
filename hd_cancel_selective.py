@@ -381,6 +381,7 @@ def xu_ly_an_toan():
 # Main loop
 print(f"🚀 Bot xoá lệnh theo tick J–M khởi động — đọc tick mỗi {CHU_KY_GIAY} giây", flush=True)
 logger.info(f"Khởi động hd_cancel_selective — chu kỳ {CHU_KY_GIAY}s")
+cst.bao_nhip('cancel_selective_seconds', CHU_KY_GIAY)
 
 xu_ly_an_toan()
 while True:

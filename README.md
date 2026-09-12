@@ -135,6 +135,8 @@ Bản đầy đủ của chúng nằm ở `qbot_setup/`.
 |---|---|
 | Cửa sổ dừng ở *"nhấn Enter để đóng cửa sổ"* | Bot đã dừng — đọc thông báo/lỗi ngay phía trên dòng đó. Cửa sổ cố ý không tự đóng để kịp đọc (Ctrl+C thì đóng luôn) |
 | "Sheet KHÔNG có tab tên …" | Tên tab lệch (dấu tiếng Việt, khoảng trắng, hoa/thường) hoặc sai Sheet ID. Bot in sẵn danh sách tab đang có — đổi tên tab cho khớp, hoặc sửa `tab_dat_lenh` / `bot_id` / `config_spreadsheet_id` |
+| Sửa `config.ini` mà bot chạy y như cũ | `config.ini` chỉ đọc LÚC KHỞI ĐỘNG — tắt rồi bật lại bot. Cũng kiểm tra bot đang chạy ở đúng thư mục vừa sửa: lúc khởi động bot in sẵn đường dẫn config nó dùng |
+| Bot huỷ lệnh chạy thưa hơn mong muốn | `cancel_orders_minutes` tính bằng **PHÚT** (điền 60 = 60 phút). Muốn tính bằng giây thì dùng `cancel_orders_seconds` |
 | `0xc000012d` khi khởi động | Hết RAM / page file Windows. Tăng page file lên 8192 MB rồi khởi động lại máy |
 | `429 Too Many Requests` | Vượt hạn mức Google. Tăng `state_cache_ttl_sec` lên 15–20 |
 | `ModuleNotFoundError` | Thiếu file khi copy — chép **toàn bộ** thư mục |

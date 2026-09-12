@@ -362,13 +362,14 @@ def cancel_orders_scheduled():
 
 
 # Main loop
-print(f"🚀 Bot hủy lệnh theo lịch khởi động - Chạy mỗi {cst.cancel_orders_minutes} phút", flush=True)
+print(f"🚀 Bot hủy lệnh theo lịch khởi động", flush=True)
 if CANCEL_ALL_ORDERS:
     print("⚠️  CHẾ ĐỘ CŨ: hủy TẤT CẢ lệnh (kể cả SL/TP) — cancel_all_orders=true", flush=True)
 else:
     print(f"🛡️  Chế độ an toàn: chỉ hủy lệnh VÀO treo quá {CANCEL_AFTER_MINUTES} phút; "
           f"KHÔNG đụng SL/TP (reduce_only)", flush=True)
-logger.info(f"Khởi động cancel orders scheduler - chạy mỗi {cst.cancel_orders_minutes} phút")
+logger.info(f"Khởi động cancel orders scheduler - chạy mỗi {cst.cancel_orders_seconds}s")
+cst.bao_nhip('cancel_orders_seconds', cst.cancel_orders_seconds)
 
 # Chạy ngay lần đầu
 cancel_orders_scheduled()
@@ -376,7 +377,7 @@ cancel_orders_scheduled()
 # Sau đó chạy theo interval
 while True:
     try:
-        config_watcher.ngu(cst.cancel_orders_minutes * 60)  # Chuyển phút thành giây
+        config_watcher.ngu(cst.cancel_orders_seconds)
         resync_exchange_time(exchange)  # [Fix1] chống clock drift -> hết -1021
         cancel_orders_scheduled()
     except KeyboardInterrupt:

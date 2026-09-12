@@ -20,6 +20,27 @@ def _ngan(v, n=14):
     return v if len(v) <= n else v[:n] + '…'
 
 
+def in_nhip_chay(cst):
+    """Nhịp chạy THỰC TẾ của từng bot (giây) — soi xem config có được nhận không."""
+    print("\n" + "─" * 72)
+    print("  ⏱️  Nhịp chạy của từng bot (giây)")
+    bang = [
+        ("hd_order_multi", "delay_vao_lenh", cst.delay_vao_lenh),
+        ("hd_update_cho_va_khop", "delay_cho_va_khop", cst.delay_cho_va_khop),
+        ("hd_alert_possition...", "delay_calert_possition_and_open_order",
+         cst.delay_calert_possition_and_open_order),
+        ("hd_update_all", "delay_update_all", cst.delay_update_all),
+        ("hd_cancel_orders_schedule", "cancel_orders_seconds", cst.cancel_orders_seconds),
+        ("hd_cancel_selective", "cancel_selective_seconds",
+         max(15, cst.config.getint('global', 'cancel_selective_seconds', fallback=60))),
+    ]
+    for bot, khoa, giay in bang:
+        print(f"     {bot:26} {giay:>8.0f}s   ({khoa})")
+    print(f"     {'dò ô B1 sheet tổng':26} "
+          f"{cst.config.getint('global', 'config_reload_seconds', fallback=300):>8}s   (config_reload_seconds)")
+    print("     ⚠️  Sửa config.ini xong phải TẮT rồi BẬT LẠI bot mới có tác dụng.")
+
+
 def soat_tab_tung_tai_khoan(cst, accs):
     """Mở sheet riêng của từng tài khoản, kiểm có đủ tab bắt buộc. Trả số lỗi."""
     print("\n" + "─" * 72)
@@ -141,6 +162,8 @@ def main():
             if muc.get(k, '').strip():
                 che = k in ('key_binance', 'secret_binance')
                 print(f"     {k:26} = {_ngan(muc[k]) if che else muc[k]}")
+
+    in_nhip_chay(cst)
 
     # Sheet RIÊNG của từng tài khoản có đủ tab không — bắt lỗi sai tên tab
     # TRƯỚC khi bật bot, thay vì để bot chạy rồi chết với lỗi thô của Google.

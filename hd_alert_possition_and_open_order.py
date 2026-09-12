@@ -216,6 +216,8 @@ def do_it():
     result_old = res
 
 
+cst.bao_nhip('delay_calert_possition_and_open_order', cst.delay_calert_possition_and_open_order)
+
 while True:
     try:
         resync_exchange_time(exchange)  # [Fix1] chống clock drift -> hết -1021

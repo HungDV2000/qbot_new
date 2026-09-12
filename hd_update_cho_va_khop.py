@@ -1052,6 +1052,7 @@ def do_it():
 
 print(f"🚀 Bot hd_update_cho_va_khop khởi động - Scan mỗi {cst.delay_cho_va_khop}s", flush=True)
 logger.info(f"Bot khởi động - Scan interval: {cst.delay_cho_va_khop}s")
+cst.bao_nhip('delay_cho_va_khop', cst.delay_cho_va_khop)
 
 scan_count = 0
 

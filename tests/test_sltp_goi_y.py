@@ -60,7 +60,8 @@ def _nap_module(fill=True, allow="N"):
          key_binance="k", secret_binance="s", key_name="TEST", chat_id="0",
          delay_cho_va_khop=600, tab_dat_lenh="ĐẶT LỆNH",
          account_dir=lambda b: __import__("pathlib").Path("/tmp"),
-         account_name="test", account_suffix=lambda: "", config=None)
+         account_name="test", account_suffix=lambda: "", config=None,
+         bao_nhip=lambda *a, **k: None)
     sheet = _Sheet()
     sys.modules["gg_sheet_factory"] = sheet
     _mod("ccxt", binance=_Ex, __version__="4", BaseError=Exception, NetworkError=Exception)

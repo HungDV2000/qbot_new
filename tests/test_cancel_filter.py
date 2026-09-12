@@ -33,7 +33,7 @@ def _load(cancel_all=False, after_min=30):
     def ad(b):
         d = tmp / b; d.mkdir(parents=True, exist_ok=True); return d
     _mod("cst", key_name="T", key_binance="x", secret_binance="y", chat_id="0",
-         cancel_orders_minutes=1, config=cfg, account_dir=ad, account_suffix=lambda: "",
+         cancel_orders_minutes=1, cancel_orders_seconds=60, bao_nhip=lambda *a, **k: None, config=cfg, account_dir=ad, account_suffix=lambda: "",
          accounts=[], account="", account_name="default")
     _mod("gg_sheet_factory", get_cho_va_khop=lambda *a, **k: [], tab_cho_va_khop="x")
     _mod("telegram_factory", send_tele=lambda *a, **k: None)

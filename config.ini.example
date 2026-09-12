@@ -40,7 +40,9 @@ delay_update_all = 120                       ; hd_update_all — số dư J1:M2
 delay_calert_possition_and_open_order = 120  ; hd_alert — cảnh báo Telegram
 
 ; ── BOT HUỶ LỆNH TREO (hd_cancel_orders_schedule) ─────────────────────────────
-cancel_orders_minutes = 60        ; bao lâu quét 1 lần (PHÚT)
+; Nhịp quét: khai 1 trong 2 dòng dưới (khai cả hai thì dòng GIÂY thắng).
+cancel_orders_seconds = 3600      ; bao lâu quét 1 lần (GIÂY)
+; cancel_orders_minutes = 60      ; cách cũ, tính bằng PHÚT
 cancel_order_after_minutes = 30   ; chỉ huỷ LỆNH VÀO treo quá ngần này phút
 ; false (AN TOÀN): KHÔNG BAO GIỜ huỷ SL/TP.  true: huỷ tất — vị thế mất bảo vệ!
 cancel_all_orders = false

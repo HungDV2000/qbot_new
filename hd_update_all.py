@@ -103,7 +103,7 @@ gg_sheet_factory.init_sheet_api()
 print("\n" + "=" * 80, flush=True)
 print("  HD_UPDATE_ALL — số dư → tab ĐẶT LỆNH J1:M2", flush=True)
 print(f"  Log: {log_filename}", flush=True)
-print(f"  Nhịp: {cst.delay_update_all}s", flush=True)
+cst.bao_nhip('delay_update_all', cst.delay_update_all)
 print("=" * 80 + "\n", flush=True)
 
 while True:
