@@ -219,6 +219,7 @@ def do_it():
 cst.bao_nhip('delay_calert_possition_and_open_order', cst.delay_calert_possition_and_open_order)
 
 while True:
+    _t0_vong = config_watcher.bat_dau_vong()
     try:
         resync_exchange_time(exchange)  # [Fix1] chống clock drift -> hết -1021
         do_it()
@@ -227,4 +228,5 @@ while True:
             resync_exchange_time(exchange, min_interval=0)  # [Fix4] ép resync ccxt ngay
         print(f"Tổng Lỗi: {e}", flush=True)
         logger.error(f"Tổng lỗi: {e}", exc_info=True)
-    config_watcher.ngu(cst.delay_calert_possition_and_open_order)   # nghỉ + dò cấu hình
+    config_watcher.ngu_theo_nhip(_t0_vong, cst.delay_calert_possition_and_open_order,
+                                 'delay_calert_possition_and_open_order')

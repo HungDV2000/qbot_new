@@ -383,10 +383,12 @@ print(f"🚀 Bot xoá lệnh theo tick J–M khởi động — đọc tick mỗ
 logger.info(f"Khởi động hd_cancel_selective — chu kỳ {CHU_KY_GIAY}s")
 cst.bao_nhip('cancel_selective_seconds', CHU_KY_GIAY)
 
+_t0_vong = config_watcher.bat_dau_vong()
 xu_ly_an_toan()
 while True:
     try:
-        config_watcher.ngu(CHU_KY_GIAY)
+        config_watcher.ngu_theo_nhip(_t0_vong, CHU_KY_GIAY, 'cancel_selective_seconds')
+        _t0_vong = config_watcher.bat_dau_vong()
         resync_exchange_time(exchange)
         xu_ly_an_toan()
     except KeyboardInterrupt:

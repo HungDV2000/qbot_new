@@ -109,5 +109,54 @@ class TestMoiBotLayNhipTuConfig(unittest.TestCase):
             self.assertIn(khoa, src)
 
 
+class TestNghiTheoNhip(unittest.TestCase):
+    """Chu kỳ phải ĐÚNG bằng nhịp khai trong config, không phải nhịp + thời gian quét."""
+
+    def setUp(self):
+        sys.path.insert(0, str(QBOT))
+        import config_watcher as cw
+        self.cw = cw
+        self.da_ngu = []
+        self.da_do = []
+
+    def _chay(self, lam_giay, nhip):
+        from unittest import mock
+        with mock.patch.object(self.cw, "ngu", lambda g: self.da_ngu.append(g)), \
+             mock.patch.object(self.cw, "kiem_tra_va_ap_dung",
+                               lambda *a, **k: self.da_do.append(1)):
+            t0 = self.cw.bat_dau_vong() - lam_giay      # giả vờ vòng vừa chạy lam_giay
+            self.cw.ngu_theo_nhip(t0, nhip, "thu")
+
+    def test_tru_di_thoi_gian_da_quet(self):
+        self._chay(lam_giay=20, nhip=60)
+        self.assertEqual(len(self.da_ngu), 1)
+        self.assertAlmostEqual(self.da_ngu[0], 40, delta=1,
+                               msg="quét 20s, nhịp 60s → phải nghỉ ~40s (không phải 60s)")
+
+    def test_vong_lau_hon_nhip_thi_chay_tiep_ngay(self):
+        self._chay(lam_giay=90, nhip=60)
+        self.assertEqual(self.da_ngu, [], "quét lâu hơn nhịp thì không nghỉ thêm")
+        self.assertEqual(len(self.da_do), 1, "không nghỉ thì vẫn phải dò cấu hình sheet tổng")
+
+    def test_khong_no_thoi_gian(self):
+        """Vòng lâu quá KHÔNG được trừ bù sang vòng sau (ngủ âm)."""
+        self._chay(lam_giay=200, nhip=60)
+        self.assertEqual([g for g in self.da_ngu if g < 0], [])
+
+    def test_nhip_0_thi_khong_treo(self):
+        self._chay(lam_giay=0, nhip=0)
+        self.assertEqual(self.da_ngu, [])
+
+
+class TestMoiBotNghiTheoNhip(unittest.TestCase):
+    def test_moi_bot_dung_ngu_theo_nhip(self):
+        for f, khoa in BOT_NHIP.items():
+            src = io.open(QBOT / f, encoding="utf-8").read()
+            with self.subTest(bot=f):
+                self.assertIn("ngu_theo_nhip(", src,
+                              f"🔴 {f} nghỉ trọn nhịp sau khi quét → chu kỳ dài hơn config")
+                self.assertIn("bat_dau_vong()", src)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -223,6 +223,39 @@ def ngu(giay):
             _log(f"dò cấu hình lỗi (bỏ qua): {e}")
 
 
+def bat_dau_vong():
+    """Mốc thời gian ĐẦU vòng — truyền cho ngu_theo_nhip."""
+    return time.time()
+
+
+def ngu_theo_nhip(bat_dau, nhip, ten=''):
+    """
+    Nghỉ sao cho MỖI VÒNG cách nhau đúng `nhip` giây, tính từ lúc BẮT ĐẦU vòng.
+
+    ngu(nhip) là "làm xong rồi nghỉ đủ nhịp" → chu kỳ thật = thời gian làm + nhịp
+    (quét 20s, nhịp 60s → 80s/vòng). Ở đây trừ đi thời gian đã làm nên bot chạy
+    ĐÚNG nhịp khai trong config. Vòng nào lâu hơn nhịp thì báo rõ và chạy tiếp
+    ngay, không dồn nợ thời gian.
+    """
+    nhip = max(0.0, float(nhip))
+    lam = max(0.0, time.time() - float(bat_dau))
+    con = nhip - lam
+    nhan = f" ({ten})" if ten else ""
+    if con <= 0:
+        print(f"⚠️  Vòng vừa rồi mất {lam:.1f}s — DÀI HƠN nhịp {nhip:g}s{nhan} → chạy tiếp ngay. "
+              f"Nới nhịp lên, hoặc bớt số mã.", flush=True)
+        _log(f"vòng {lam:.1f}s > nhịp {nhip:g}s{nhan}")
+        try:
+            kiem_tra_va_ap_dung()      # không nghỉ thì vẫn phải dò cấu hình
+        except SystemExit:
+            raise
+        except Exception as e:
+            _log(f"dò cấu hình lỗi (bỏ qua): {e}")
+        return
+    print(f"⏳ Vòng {lam:.1f}s — nghỉ {con:.0f}s (nhịp {nhip:g}s{nhan})", flush=True)
+    ngu(con)
+
+
 def dung_vi_bi_tat(nha_khoa=None):
     """Tài khoản không còn Bật trên sheet → dừng hẳn, điều phối KHÔNG bật lại."""
     _canh_bao("Tài khoản đã bị TẮT hoặc XOÁ khỏi sheet tổng → bot dừng cho tài khoản này.", 0)

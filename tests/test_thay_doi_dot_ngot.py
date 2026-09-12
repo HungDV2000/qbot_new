@@ -258,9 +258,14 @@ class TestNgu(unittest.TestCase):
         for f in ("hd_order_multi.py", "hd_update_cho_va_khop.py", "hd_update_all.py",
                   "hd_alert_possition_and_open_order.py", "hd_cancel_orders_schedule.py",
                   "hd_cancel_selective.py"):
+            src = io.open(os.path.join(QBOT, f), encoding="utf-8").read()
             with self.subTest(bot=f):
-                self.assertIn("config_watcher.ngu(", io.open(os.path.join(QBOT, f), encoding="utf-8").read(),
-                              f"🔴 {f} không dò cấu hình → chạy KEY CŨ mãi sau khi đổi trên sheet")
+                # ngu() hoặc ngu_theo_nhip() đều dò cấu hình trong lúc nghỉ;
+                # time.sleep thẳng thì KHÔNG → bot chạy key cũ mãi.
+                self.assertTrue("config_watcher.ngu(" in src or "config_watcher.ngu_theo_nhip(" in src,
+                                f"🔴 {f} không dò cấu hình → chạy KEY CŨ mãi sau khi đổi trên sheet")
+                self.assertNotIn("time.sleep(", src.split("while True:")[-1],
+                                 f"🔴 {f} nghỉ bằng time.sleep ở vòng lặp chính → không dò được cấu hình")
 
 
 if __name__ == "__main__":

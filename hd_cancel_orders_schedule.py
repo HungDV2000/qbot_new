@@ -372,12 +372,14 @@ logger.info(f"Khởi động cancel orders scheduler - chạy mỗi {cst.cancel_
 cst.bao_nhip('cancel_orders_seconds', cst.cancel_orders_seconds)
 
 # Chạy ngay lần đầu
+_t0_vong = config_watcher.bat_dau_vong()
 cancel_orders_scheduled()
 
-# Sau đó chạy theo interval
+# Sau đó chạy theo interval — nghỉ phần CÒN LẠI của nhịp, tính từ đầu vòng trước
 while True:
     try:
-        config_watcher.ngu(cst.cancel_orders_seconds)
+        config_watcher.ngu_theo_nhip(_t0_vong, cst.cancel_orders_seconds, 'cancel_orders_seconds')
+        _t0_vong = config_watcher.bat_dau_vong()
         resync_exchange_time(exchange)  # [Fix1] chống clock drift -> hết -1021
         cancel_orders_scheduled()
     except KeyboardInterrupt:

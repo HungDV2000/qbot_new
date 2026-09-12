@@ -1247,6 +1247,7 @@ if __name__ == "__main__":
         logger.info("Telegram command bot không chạy (run_tele_command = false)")
 
     while True:
+        _t0_vong = config_watcher.bat_dau_vong()
         try:
             resync_exchange_time(exchange)  # [Fix1] chống clock drift -> hết -1021
             do_it()
@@ -1266,4 +1267,4 @@ if __name__ == "__main__":
         # Nghỉ tới vòng sau — TRONG LÚC NGHỈ dò cấu hình trên sheet tổng, đổi thì
         # xác minh rồi nạp lại. Đặt SAU khi quét xong: không bao giờ cắt ngang
         # lúc vừa vào lệnh mà chưa kịp đặt cắt lỗ.
-        config_watcher.ngu(cst.delay_vao_lenh)
+        config_watcher.ngu_theo_nhip(_t0_vong, cst.delay_vao_lenh, 'delay_vao_lenh')

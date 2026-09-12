@@ -107,10 +107,11 @@ cst.bao_nhip('delay_update_all', cst.delay_update_all)
 print("=" * 80 + "\n", flush=True)
 
 while True:
+    _t0_vong = config_watcher.bat_dau_vong()
     try:
         do_it()
     except Exception as e:
         print(f"❌ Tổng lỗi: {e}", flush=True)
         logger.error(f"Tổng lỗi: {e}", exc_info=True)
     print(f"\n⏳ Chờ {cst.delay_update_all}s...\n", flush=True)
-    config_watcher.ngu(cst.delay_update_all)
+    config_watcher.ngu_theo_nhip(_t0_vong, cst.delay_update_all, 'delay_update_all')

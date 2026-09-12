@@ -1057,6 +1057,7 @@ cst.bao_nhip('delay_cho_va_khop', cst.delay_cho_va_khop)
 scan_count = 0
 
 while True:
+    _t0_vong = config_watcher.bat_dau_vong()
     try:
         resync_exchange_time(exchange)  # [Fix1] chống clock drift -> hết -1021
         scan_count += 1
@@ -1082,7 +1083,7 @@ while True:
         traceback.print_exc()
         print(f"⏳ Chờ {cst.delay_cho_va_khop}s trước khi thử lại...\n", flush=True)
     
-    config_watcher.ngu(cst.delay_cho_va_khop)   # nghỉ + dò cấu hình trên sheet tổng
+    config_watcher.ngu_theo_nhip(_t0_vong, cst.delay_cho_va_khop, 'delay_cho_va_khop')
 
 print("👋 Bot đã dừng", flush=True)
 logger.info("Bot đã dừng")
