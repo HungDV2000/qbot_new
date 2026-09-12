@@ -1,4 +1,5 @@
 import cst
+import re
 import time
 
 spreadsheetId = cst.spreadsheet_id
@@ -326,6 +327,40 @@ def force_refresh_token():
     logger.error(f"Lỗi khi tạo token mới: {e}", exc_info=True)
     return False
 
+class LoiThieuTab(Exception):
+  """Sheet không có tab cần dùng — lỗi CẤU HÌNH, sửa sheet/config chứ không phải chờ mạng."""
+
+
+def ten_tab_trong_loi(loi):
+  """Lấy tên tab từ lỗi "Unable to parse range: 'ĐẶT LỆNH'!J1:ZZ1000"."""
+  m = re.search(r"Unable to parse range: '?([^'!]+)'?!", str(loi))
+  return m.group(1) if m else "(không rõ)"
+
+
+def mo_ta_thieu_tab(ten_tab, ds_tab, sheet_id):
+  """Câu báo cho người dùng — nói thẳng thiếu tab nào, sheet đang có tab gì."""
+  co = ("Các tab đang có: " + ", ".join(f"'{t}'" for t in ds_tab)) if ds_tab \
+      else "Không đọc được danh sách tab."
+  return (f"Sheet KHÔNG có tab tên '{ten_tab}'.\n"
+          f"   {co}\n"
+          f"   Sheet: {sheet_id}\n"
+          f"   Sửa: đổi tên tab trên sheet cho khớp, hoặc sửa `tab_dat_lenh` trong config.ini.\n"
+          f"   (Tên phải khớp TỪNG KÝ TỰ, kể cả dấu tiếng Việt và khoảng trắng.)")
+
+
+def ten_cac_tab(sheet_id=None):
+  """Tên các tab của sheet. Không đọc được → []."""
+  try:
+    init_sheet_api()
+    meta = spreadsheets_service.get(spreadsheetId=sheet_id or spreadsheetId,
+                                    fields='sheets.properties.title').execute()
+    return [m['properties']['title'] for m in meta.get('sheets', [])
+            if isinstance(m, dict) and m.get('properties', {}).get('title')]
+  except Exception as e:
+    logger.warning(f"Không lấy được danh sách tab: {e}")
+    return []
+
+
 def execute_with_retry(func, *args, max_retries=2, **kwargs):
   """
   Wrapper function để tự động retry khi gặp RefreshError
@@ -407,6 +442,13 @@ def execute_with_retry(func, *args, max_retries=2, **kwargs):
           print(f"❌ Đã thử {max_retries + 1} lần nhưng vẫn lỗi 403", flush=True)
           logger.critical(f"Không thể giải quyết lỗi 403 sau {max_retries + 1} lần thử")
           raise
+      elif 'Unable to parse range' in str(e):
+        # Sheet không có tab đó — lỗi cấu hình, nói thẳng thay vì in lỗi thô
+        loi = LoiThieuTab(mo_ta_thieu_tab(ten_tab_trong_loi(e),
+                                          ten_cac_tab(spreadsheetId), spreadsheetId))
+        logger.error(str(loi))
+        print(f"❌ {loi}", flush=True)
+        raise loi from e
       else:
         # Lỗi HttpError khác (không phải 403)
         logger.error(f"HttpError (status {e.resp.status}): {e}")

@@ -33,7 +33,9 @@ Có **6 bot**, bật **riêng từng cái** được. Mỗi bot tự chạy cho 
    ```
    python kiem_tra_cau_hinh.py
    ```
-   Hết dòng ❌ mới bật bot.
+   Hết dòng ❌ mới bật bot. Công cụ này soát cả: tài khoản trên sheet tổng, key/Sheet ID
+   của từng tài khoản, và **sheet riêng của mỗi tài khoản có đủ 2 tab** (ĐẶT LỆNH,
+   Chờ và khớp) — sai tên tab bị bắt ngay ở đây, không phải đợi bot chạy mới lỗi.
 
 ---
 
