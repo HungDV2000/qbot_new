@@ -125,6 +125,21 @@ class TestPhanLoai(unittest.TestCase):
     def test_lenh_vao(self):
         self.assertEqual(self.M.phan_loai(entry("3")), "ENTRY")
 
+    def test_mo_ta_de_soi_log(self):
+        """Log phải nói rõ VÌ SAO xếp loại vậy — không thì không chẩn đoán được."""
+        import phan_loai_lenh as p
+        d = p.mo_ta(sl_close("1"))
+        self.assertIn("SL", d)
+        self.assertIn("closePosition=True", d)
+        self.assertIn("STOP_MARKET", d)
+        d2 = p.mo_ta(algo_trail(9), True)
+        self.assertIn("TP", d2)
+        self.assertIn("callbackRate=1", d2)
+        # Lệnh không mang cờ đóng vị thế → ENTRY, và log phải cho thấy cả 2 cờ đều False
+        d3 = p.mo_ta({"algoId": 8, "algoStatus": "NEW", "algoType": "CONDITIONAL"}, True)
+        self.assertIn("ENTRY", d3)
+        self.assertIn("reduceOnly=False", d3)
+
     def test_gia_tri_tick(self):
         for v in ("TRUE", True, "y", "x", "1", "✓"):
             self.assertTrue(self.M.has_delete_tick(v), v)

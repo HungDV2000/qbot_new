@@ -178,6 +178,23 @@ class TestGhiVaoSheet(unittest.TestCase):
         self.assertEqual(p, "Y", "đặt default_allow_order=Y thì SL/TP tự động hẳn")
 
 
+class TestLogDeChuanDoan(unittest.TestCase):
+    """Khách báo "quét không ra": phải biết bot ghi vào SHEET NÀO và phân loại lệnh ra sao."""
+
+    def _src(self):
+        import io as _io
+        return _io.open("hd_update_cho_va_khop.py", encoding="utf-8").read()
+
+    def test_log_sheet_id_khi_ghi(self):
+        src = self._src()
+        self.assertGreaterEqual(src.count("gg_sheet_factory.spreadsheetId"), 2,
+                                "🔴 không log Sheet ID → không biết bot ghi nhầm file hay không")
+
+    def test_log_chi_tiet_tung_lenh(self):
+        self.assertIn("mo_ta_lenh(", self._src(),
+                      "🔴 không log chi tiết lệnh → không biết vì sao cột G/H sai")
+
+
 class TestCodeDaNoi(unittest.TestCase):
     def test_ham_khong_con_la_code_chet(self):
         import io

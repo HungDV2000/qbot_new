@@ -82,8 +82,9 @@ def _ghi_so_du(total_margin, total_wallet, total_pnl):
     # array_index = -1 → ghi từ dòng 1
     gg_sheet_factory.update_multi(
         gg_sheet_factory.tab_dat_lenh, -1, khoi, BALANCE_ANCHOR_COL)
-    print(f"   └─ ví={total_wallet} ký quỹ={total_margin} pnl={total_pnl} lúc {ts}",
-          flush=True)
+    print(f"   └─ ví={total_wallet} ký quỹ={total_margin} pnl={total_pnl} lúc {ts}", flush=True)
+    logger.info(f"Ghi số dư vào sheet {gg_sheet_factory.spreadsheetId} "
+                f"tab '{gg_sheet_factory.tab_dat_lenh}' {BALANCE_ANCHOR_COL}1:M2")
 
 
 def do_it():

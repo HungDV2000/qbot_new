@@ -47,6 +47,7 @@ cancel_order_after_minutes = 30
 MOCKS = {
 "gg_sheet_factory.py": '''
 import json, os, cst
+spreadsheetId = cst.spreadsheet_id          # bot log Sheet ID đang ghi vào
 tab_dat_lenh = cst.tab_dat_lenh
 tab_list_all_ma = "100 ma (50 tang va 50 giam)"
 tab_cho_va_khop = "Cho va khop"

@@ -34,6 +34,17 @@ def kieu(o):
                or o.get('type') or i.get('type') or '').upper()
 
 
+def mo_ta(o, la_algo=False):
+    """Một dòng tóm tắt để soi log: bot xếp lệnh này vào loại nào và VÌ SAO."""
+    i = _info(o)
+    ro = _dung(o.get('reduceOnly')) or _dung(i.get('reduceOnly'))
+    cp = _dung(o.get('closePosition')) or _dung(i.get('closePosition'))
+    cb = o.get('callbackRate') or i.get('callbackRate') or 0
+    ten = o.get('algoId') or o.get('id') or '?'
+    return (f"{phan_loai(o, la_algo)} | kiểu={kieu(o) or '?'} | reduceOnly={ro} "
+            f"closePosition={cp} callbackRate={cb} | #{ten}")
+
+
 def phan_loai(o, la_algo=False):
     """'ENTRY' | 'SL' | 'TP' | 'UNKNOWN' — cho cả lệnh thường lẫn algo."""
     if not la_lenh_dong(o):

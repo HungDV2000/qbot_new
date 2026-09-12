@@ -15,7 +15,7 @@ from binance_futures_direct import (
     resync_exchange_time,
 )
 from binance_symbol_row import fetch_all_tickers_24h, get_sheet_col_c_price
-from phan_loai_lenh import la_lenh_dong, phan_loai
+from phan_loai_lenh import la_lenh_dong, mo_ta as mo_ta_lenh, phan_loai
 
 file_name = os.path.basename(os.path.abspath(__file__))  
 os.system(f"title {file_name} - {cst.key_name}")
@@ -184,8 +184,13 @@ def check_sl_tp_orders(symbol, orders):
             o for o in algo_orders
             if str(o.get('algoStatus', '')).upper() in ('NEW', 'TRIGGERED')
         ]
-        loai = ([phan_loai(o, la_algo=True) for o in active_algo_orders]
-                + [phan_loai(o) for o in orders])
+        loai = []
+        for o in active_algo_orders:
+            loai.append(phan_loai(o, la_algo=True))
+            logger.info(f"   [{symbol}] algo: {mo_ta_lenh(o, True)}")
+        for o in orders:
+            loai.append(phan_loai(o))
+            logger.info(f"   [{symbol}] lệnh: {mo_ta_lenh(o)}")
         return 'SL' in loai, 'TP' in loai, len(active_algo_orders) + len(orders)
     except Exception as e:
         logger.error(f"Lỗi khi check SL/TP cho {symbol}: {e}", exc_info=True)
@@ -1016,7 +1021,8 @@ def do_it():
         print(f"  📅 Cập nhật timestamp vào A2: {timestamp_str}", flush=True)
         gg_sheet_factory.update_single_value(gg_sheet_factory.tab_cho_va_khop, "A2", timestamp_str)
 
-        print("  ✍️  Ghi dữ liệu A–I...", flush=True)
+        print(f"  ✍️  Ghi dữ liệu A–I vào sheet {gg_sheet_factory.spreadsheetId} "
+              f"· tab '{gg_sheet_factory.tab_cho_va_khop}'", flush=True)
         gg_sheet_factory.update_multi(gg_sheet_factory.tab_cho_va_khop, 2, tab_100_ma_2d_arr, "a")
 
         if tab_q_prices:
@@ -1029,7 +1035,8 @@ def do_it():
         ghi_goi_y_sltp(tab_sltp, tab_100_ma_2d_arr, anh_cu)
 
         print(f"✅ Hoàn thành! Đã cập nhật {len(tab_100_ma_2d_arr)} dòng (A–I + cột Q)", flush=True)
-        logger.info(f"✅ Hoàn thành cập nhật sheet: {len(tab_100_ma_2d_arr)} dòng (A–I + Q)")
+        logger.info(f"✅ Hoàn thành cập nhật sheet {gg_sheet_factory.spreadsheetId} "
+                    f"tab '{gg_sheet_factory.tab_cho_va_khop}': {len(tab_100_ma_2d_arr)} dòng (A–I + Q)")
         
     except HttpError as e:
         # ✅ Xử lý đặc biệt cho lỗi 403 (Permission denied)
