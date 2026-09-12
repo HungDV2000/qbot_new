@@ -410,8 +410,51 @@ def _lay_service():
     return build('sheets', 'v4', credentials=creds, cache_discovery=False)
 
 
+def _ten_cac_tab(sv, spreadsheet_id):
+    """Danh sách tên tab của sheet — để chỉ đúng chỗ sai khi tên tab lệch."""
+    try:
+        meta = sv.spreadsheets().get(spreadsheetId=spreadsheet_id,
+                                     fields='sheets.properties.title').execute()
+        return [s['properties']['title'] for s in meta.get('sheets', [])
+                if isinstance(s, dict) and s.get('properties', {}).get('title')]
+    except Exception:
+        return []
+
+
+def _loi_doc_sheet(sv, spreadsheet_id, tab, e, viec):
+    """Đổi lỗi thô của Google thành câu nói rõ phải sửa gì.
+
+    Lỗi hay gặp nhất: "Unable to parse range: 'QBOT01'!A1:Z200" — nghe như lỗi
+    cú pháp, thật ra là sheet KHÔNG CÓ tab tên đó.
+    """
+    txt = str(e)
+    if 'Unable to parse range' in txt:
+        ds = _ten_cac_tab(sv, spreadsheet_id) if sv is not None else []
+        co = ("Các tab đang có: " + ", ".join(f"'{t}'" for t in ds)) if ds \
+            else "Không đọc được danh sách tab."
+        return LoiSheetCauHinh(
+            f"Sheet tổng KHÔNG có tab tên '{tab}'.\n"
+            f"   {co}\n"
+            f"   Sheet: {spreadsheet_id}\n"
+            f"   Sửa 1 trong 2: đổi `bot_id` trong config.ini cho khớp tên tab,\n"
+            f"   hoặc đổi tên tab trên sheet thành '{tab}'.")
+    if '404' in txt or 'Requested entity was not found' in txt:
+        return LoiSheetCauHinh(
+            f"Không tìm thấy sheet tổng (ID: {spreadsheet_id}).\n"
+            f"   Kiểm tra lại `config_spreadsheet_id` trong config.ini — ID là đoạn\n"
+            f"   giữa /d/ và /edit trên đường dẫn Google Sheet.")
+    if '403' in txt or 'permission' in txt.lower():
+        return LoiSheetCauHinh(
+            f"Tài khoản Google đang đăng nhập KHÔNG có quyền mở sheet tổng.\n"
+            f"   Sheet: {spreadsheet_id}\n"
+            f"   Chia sẻ sheet (quyền Editor) cho đúng tài khoản đó, hoặc bấm đúp\n"
+            f"   {_LENH_DANG_NHAP} để đăng nhập lại bằng tài khoản khác.")
+    return LoiDocSheet(f"Không {viec}: {e}")
+
+
 def doc_o_phien_ban(spreadsheet_id, tab):
     """Đọc MỖI ô B1 — dùng để dò thay đổi mà không tốn hạn mức."""
+    sv = None
     try:
         sv = _lay_service()
         r = sv.spreadsheets().values().get(
@@ -421,11 +464,13 @@ def doc_o_phien_ban(spreadsheet_id, tab):
     except LoiSheetCauHinh:
         raise
     except Exception as e:
-        raise LoiDocSheet(f"Không đọc được ô phiên bản '{tab}'!B1: {e}")
+        raise _loi_doc_sheet(sv, spreadsheet_id, tab, e,
+                             f"đọc được ô phiên bản '{tab}'!B1")
 
 
 def doc_bang_tho(spreadsheet_id, tab):
     """Đọc trọn vùng cấu hình A1:Z200 của tab."""
+    sv = None
     try:
         sv = _lay_service()
         r = sv.spreadsheets().values().get(
@@ -434,7 +479,8 @@ def doc_bang_tho(spreadsheet_id, tab):
     except LoiSheetCauHinh:
         raise
     except Exception as e:
-        raise LoiDocSheet(f"Không đọc được tab '{tab}' của sheet tổng: {e}")
+        raise _loi_doc_sheet(sv, spreadsheet_id, tab, e,
+                             f"đọc được tab '{tab}' của sheet tổng")
 
 
 def nap_tu_bang(rows, bot_id=''):

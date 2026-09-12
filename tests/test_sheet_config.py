@@ -135,5 +135,65 @@ class TestKhongNapCheo(unittest.TestCase):
             self.assertNotIn(x, cam, f"🔴 sheet_config nạp {x} → vòng lặp import")
 
 
+class TestBaoLoiDocSheet(unittest.TestCase):
+    """Lỗi thô của Google khó hiểu — bot phải nói thẳng phải sửa gì.
+
+    Gặp thật trên VPS: "Unable to parse range: 'QBOT01'!A1:Z200" nghe như lỗi cú
+    pháp, thật ra là sheet tổng KHÔNG CÓ tab tên đó.
+    """
+    TABS = ["QBOT02", "Sheet1"]
+
+    def _sv(self, loi, tabs=None):
+        tabs = self.TABS if tabs is None else tabs
+
+        class Values:
+            def get(s, **k): return s
+            def execute(s): raise Exception(loi)
+
+        class Meta:
+            def get(s, **k): return s
+            def execute(s): return {"sheets": [{"properties": {"title": t}} for t in tabs]}
+
+        class SV:
+            def spreadsheets(s):
+                return type("S", (), {"values": lambda _s: Values(),
+                                      "get": lambda _s, **k: Meta().get(**k)})()
+        return SV()
+
+    def _loi(self, loi, tabs=None):
+        from unittest import mock
+        with mock.patch.object(sc, "_lay_service", lambda: self._sv(loi, tabs)):
+            with self.assertRaises(sc.LoiSheetCauHinh) as cm:
+                sc.doc_bang_tho("SHEET_ID", "QBOT01")
+        return cm.exception
+
+    def test_sai_ten_tab_thi_liet_ke_tab_dang_co(self):
+        e = self._loi("<HttpError 400 ... Unable to parse range: 'QBOT01'!A1:Z200>")
+        msg = str(e)
+        self.assertIn("KHÔNG có tab tên 'QBOT01'", msg)
+        self.assertIn("'QBOT02'", msg)
+        self.assertIn("bot_id", msg, "phải chỉ ra sửa bot_id hoặc đổi tên tab")
+        self.assertNotIsInstance(e, sc.LoiDocSheet, "sai tên tab là lỗi CẤU HÌNH, không phải mạng")
+
+    def test_khong_doc_duoc_danh_sach_tab_van_bao_ro(self):
+        e = self._loi("Unable to parse range: 'QBOT01'!A1:Z200", tabs=[])
+        self.assertIn("KHÔNG có tab tên 'QBOT01'", str(e))
+
+    def test_sai_id_sheet(self):
+        e = self._loi("<HttpError 404 ... Requested entity was not found.>")
+        self.assertIn("config_spreadsheet_id", str(e))
+
+    def test_khong_co_quyen_mo_sheet(self):
+        e = self._loi("<HttpError 403 ... The caller does not have permission>")
+        self.assertIn("quyền", str(e))
+        self.assertIn("dang_nhap_google.py", str(e))
+
+    def test_loi_mang_van_la_loi_tam_thoi(self):
+        from unittest import mock
+        with mock.patch.object(sc, "_lay_service", lambda: self._sv("Connection reset by peer")):
+            with self.assertRaises(sc.LoiDocSheet):
+                sc.doc_bang_tho("SHEET_ID", "QBOT01")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
