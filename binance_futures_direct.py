@@ -292,3 +292,37 @@ def _fetch_all_algo_orders_recent(symbol_clean: str, history_hours: int):
         max_retries=3,
     )
     return normalize_algo_orders_response(response, symbol_clean)
+
+
+def cancel_algo_orders(symbol: str = ''):
+    """
+    Huỷ MỌI lệnh điều kiện đang mở ở Algo API — stop, stop limit, trailing, cắt lỗ
+    closePosition. Binance đã chuyển các lệnh này sang Algo API nên
+    exchange.fetch_open_orders / cancel_order KHÔNG thấy chúng.
+    symbol trống = mọi mã. Trả (số đã huỷ, số lỗi); không đọc được danh sách → (0, -1).
+    """
+    ma = clean_futures_symbol(symbol) if symbol else ''
+    try:
+        ds = normalize_algo_orders_response(
+            futures_signed_request('GET', '/fapi/v1/openAlgoOrders',
+                                   {'symbol': ma} if ma else {}, max_retries=2), ma)
+    except Exception as e:
+        logger.error(f'[ALGO] Không đọc được lệnh điều kiện {ma or "(mọi mã)"}: {e}')
+        return 0, -1
+    if ds is None:
+        return 0, -1
+    huy = loi = 0
+    for a in ds:
+        try:
+            r = futures_signed_request('DELETE', '/fapi/v1/algoOrder',
+                                       {'symbol': a.get('symbol') or ma, 'algoId': a.get('algoId')},
+                                       max_retries=2)
+        except Exception as e:
+            r = None
+            logger.error(f'[ALGO] Lỗi huỷ algo {a.get("algoId")} {a.get("symbol")}: {e}')
+        if isinstance(r, dict) and (str(r.get('code', '')) == '200' or r.get('algoId') is not None):
+            huy += 1
+        else:
+            loi += 1
+            logger.warning(f'[ALGO] Không huỷ được algo {a.get("algoId")} {a.get("symbol")}: {r}')
+    return huy, loi

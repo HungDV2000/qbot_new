@@ -897,6 +897,15 @@ def scan_cho_va_khop_legs(legs, rows=None, lap_ke_hoach=None):
             continue
 
 
+def _canh_bao_algo(so_loi):
+  """Dòng cảnh báo Telegram khi còn lệnh điều kiện (stop/trailing/cắt lỗ) chưa huỷ được."""
+  if so_loi < 0:
+    return "\n⚠️ <b>Không đọc được lệnh điều kiện (stop/trailing/cắt lỗ)</b> — vào app Binance kiểm tra!"
+  if so_loi:
+    return f"\n⚠️ <b>Còn {so_loi} lệnh điều kiện chưa huỷ được</b> — vào app Binance kiểm tra!"
+  return ""
+
+
 def _do_entry_phase(mot_lenh_vao_moi_ma=False):
   print(f"{datetime.now()}. Scan Vào Lệnh----------------------------------------------------", flush=True)
   sys.stdout.flush()  # Flush ngay sau khi bắt đầu scan
@@ -977,7 +986,14 @@ def _do_entry_phase(mot_lenh_vao_moi_ma=False):
             except Exception as e:
                 logger.error(f"Lỗi hủy lệnh {order['id']}: {e}")
         
+        # Lệnh điều kiện (stop, trailing, cắt lỗ closePosition) nằm ở Algo API —
+        # fetch_open_orders KHÔNG thấy. Không huỷ thì lệnh vào stop/trailing còn
+        # treo sẽ MỞ LẠI vị thế.
+        from binance_futures_direct import cancel_algo_orders
+        algo_huy, algo_loi = cancel_algo_orders()
+        cancelled_orders += algo_huy
         msg = f"✅ <b>HOÀN TẤT STOP</b>\n\n<b>Vị thế đã đóng:</b> {closed_positions}\n<b>Lệnh đã hủy:</b> {cancelled_orders}\n<b>Thời gian:</b> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+        msg += _canh_bao_algo(algo_loi)
         telegram_factory.send_tele(msg, cst.chat_id, True, True)
         logger.warning("✅ Hoàn tất lệnh STOP")
     except Exception as e:
@@ -998,7 +1014,14 @@ def _do_entry_phase(mot_lenh_vao_moi_ma=False):
             except Exception as e:
                 logger.error(f"Lỗi hủy lệnh {order['id']}: {e}")
         
+        # Lệnh điều kiện (stop, trailing, cắt lỗ closePosition) nằm ở Algo API —
+        # fetch_open_orders KHÔNG thấy. Không huỷ thì lệnh vào stop/trailing còn
+        # treo sẽ MỞ LẠI vị thế.
+        from binance_futures_direct import cancel_algo_orders
+        algo_huy, algo_loi = cancel_algo_orders()
+        cancelled_count += algo_huy
         msg = f"✅ <b>ĐÃ HỦY TẤT CẢ LỆNH CHỜ</b>\n\n<b>Số lệnh đã hủy:</b> {cancelled_count}\n<b>Vị thế:</b> Giữ nguyên\n<b>Thời gian:</b> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+        msg += _canh_bao_algo(algo_loi)
         telegram_factory.send_tele(msg, cst.chat_id, True, True)
         logger.info(f"✅ Đã hủy {cancelled_count} lệnh chờ")
         

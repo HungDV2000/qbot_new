@@ -176,6 +176,15 @@ def cancel_all_open_orders(symbol):
         delay=2
     )
 
+    # Cắt lỗ / chốt lời trailing / lệnh vào stop nằm ở Algo API — hàm trên không thấy
+    from binance_futures_direct import cancel_algo_orders
+    algo_huy, algo_loi = cancel_algo_orders(symbol)
+    if algo_huy:
+        logger.info(f"✅ Đã huỷ {algo_huy} lệnh điều kiện (Algo) cho {symbol}")
+    if algo_loi:
+        success = False
+        remaining = -1 if (algo_loi < 0 or remaining < 0) else remaining + algo_loi
+
     if success:
         msg = f"✅ <b>ĐÃ HỦY LỆNH CHỜ</b>\n\n<b>Mã:</b> {symbol}\n<b>Trạng thái:</b> Đã xóa sạch tất cả lệnh"
         telegram_factory.send_tele(msg, cst.chat_id, True, True)

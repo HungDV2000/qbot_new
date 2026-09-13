@@ -9,20 +9,20 @@
 
 Kiểu nào cũng **phải bật** `hd_update_cho_va_khop`, vì bot này ghi tab "Chờ và khớp";
 thiếu nó thì không có cắt lỗ.
-⛔ Không bật chung hai kiểu cho cùng một tài khoản: bot tự dừng và báo "ĐẶT LỆNH TRÙNG".
+⛔ Không bật chung hai kiểu cho cùng một tài khoản: bot bật sau tự dừng và báo "ĐẶT LỆNH TRÙNG".
 
-```
-chay_bot.bat hd_update_cho_va_khop
-chay_bot.bat hd_order_multi              ← kiểu MỚI
-chay_bot.bat hd_order    +  chay_bot.bat hd_order_123    ← hoặc kiểu CŨ
-```
+| | Windows | macOS / Linux |
+|---|---|---|
+| Bắt buộc | `chay_bot.bat hd_update_cho_va_khop` | `./start_bot.sh hd_update_cho_va_khop` |
+| Kiểu MỚI | `chay_bot.bat hd_order_multi` | `./start_bot.sh hd_order_multi` |
+| Hoặc kiểu CŨ | `chay_bot.bat hd_order` + `chay_bot.bat hd_order_123` | `./start_bot.sh hd_order` + `./start_bot.sh hd_order_123` |
 
 ---
 
 ## 2. Tab ĐẶT LỆNH — lệnh vào
 
-**Vốn:** `E2` = vốn tổng, `D1` = % mỗi lệnh, `D2` = vốn mặc định. Cột **H** của dòng
-nào có số thì dòng đó dùng số ở H.
+**Vốn mỗi lệnh:** cột **H** của dòng; H trống thì lấy `D1` × `E2` (% × vốn tổng),
+không có E2 thì lấy `D2`. ⚠️ **Tối thiểu 10 USDT** — dưới 10 bot bỏ qua dòng.
 
 **Ghi mã:** dòng **4–53** cho LONG, dòng **55–104** cho SHORT.
 
@@ -31,10 +31,25 @@ nào có số thì dòng đó dùng số ở H.
 | A | Mã (`BTC`, `ATOMUSDT`…) | Mã |
 | B | Đòn bẩy (`N`/`0` = bỏ dòng) | Đòn bẩy |
 | C | — | **Callback %** |
-| D | Giá vào | **Giá kích hoạt** |
+| D | Giá vào (kiểu 2 market không cần) | **Giá kích hoạt** |
 | F | Kiểu lệnh: `1` limit · `2` market · `3` stop market · `4` stop limit · `5` trailing | — |
 | G | Kiểu 4 = giá limit · kiểu 5 = callback % | — |
-| H | Vốn (USDT), để trống = theo D1/D2/E2 | Vốn |
+| H | Vốn (USDT) | Vốn |
+
+**Giá đặt đúng phía** (sai phía: bot bỏ qua hoặc Binance từ chối):
+
+| Kiểu | Lệnh MUA (LONG) | Lệnh BÁN (SHORT) |
+|---|---|---|
+| 1 limit · 5 trailing | **Thấp hơn** giá hiện tại | **Cao hơn** giá hiện tại |
+| 3 stop market · 4 stop limit | **Cao hơn** giá hiện tại | **Thấp hơn** giá hiện tại |
+
+**Mỗi mã chỉ vào 1 lần** (đã có vị thế thì thôi).
+
+⚠️ **Muốn đổi giá lệnh đang chờ:** tick **J** ở tab Chờ và khớp để xoá lệnh cũ, rồi mới
+sửa giá.
+- **Kiểu MỚI:** sửa giá D khi lệnh cũ còn treo thì bot đặt **THÊM** một lệnh ở giá mới
+  → gấp đôi vốn.
+- **Kiểu CŨ:** bot không đặt thêm, nhưng cũng không đổi giá lệnh cũ.
 
 **Bấm chạy bằng ô B2:**
 
@@ -43,43 +58,60 @@ nào có số thì dòng đó dùng số ở H.
 | `CHỜ` | Không vào lệnh mới, vẫn đặt SL/TP. **Nên để CHỜ khi đang sửa sheet** |
 | `LONG` | Vào lệnh các dòng 4–53 |
 | `SHORT` | Vào lệnh các dòng 55–104 |
-| `STOP` | ⚠️ Đóng **hết** vị thế + huỷ **hết** lệnh |
-| `XÓA CHỜ` | ⚠️ Huỷ **hết** lệnh chờ, giữ vị thế |
+| `STOP` | ⚠️ Đóng **hết** vị thế + huỷ **hết** lệnh (cả stop / trailing / cắt lỗ) |
+| `XÓA CHỜ` | ⚠️ Huỷ **hết** lệnh chờ (cả stop / trailing / cắt lỗ), giữ vị thế |
 | `XÓA VỊ THẾ` | ⚠️ Đóng **hết** vị thế, giữ lệnh chờ |
 
 ⚠️ `STOP` / `XÓA …` lặp lại **mỗi vòng** → làm xong đổi B2 về `CHỜ` ngay.
-
-**Lưu ý giá:**
-- Limit / trailing **MUA**: giá phải **thấp hơn** giá hiện tại.
-- Limit / trailing **BÁN**: giá phải **cao hơn** giá hiện tại.
-- Sai phía thì bot bỏ qua dòng.
+Telegram báo *"Còn … lệnh điều kiện chưa huỷ được"* → vào app Binance huỷ tay.
 
 ---
 
 ## 3. Tab CHỜ VÀ KHỚP — cắt lỗ / chốt lời
 
 Lệnh vào khớp xong, `hd_update_cho_va_khop` ghi mã vào tab này với **D = Y** và tự
-điền giá gợi ý vào N/O.
+điền giá gợi ý vào N/O (chỉ khi ô trống).
 
 | Cột | Ý nghĩa | Bạn làm |
 |---|---|---|
-| **N** | Giá cắt lỗ | Sửa nếu muốn |
-| **O** | Kiểu mới: giá chốt lời **limit**. Kiểu cũ: giá **kích hoạt trailing**; gõ `NGAY` = kích hoạt ngay (ô trống thì bot tự điền giá gợi ý) | Sửa nếu muốn |
+| **N** | Giá cắt lỗ — LONG: **thấp hơn** giá hiện tại · SHORT: **cao hơn** | Sửa nếu muốn |
+| **O** | Giá chốt lời — LONG: **cao hơn** giá hiện tại · SHORT: **thấp hơn**. Kiểu mới: lệnh **limit**. Kiểu cũ: giá **kích hoạt trailing**, gõ `NGAY` = kích hoạt ngay | Sửa nếu muốn |
 | **P** | Cho phép đặt SL/TP | **Gõ `Y`**: không có Y thì bot KHÔNG đặt |
 | **N1** | Kiểu cũ: callback % của chốt lời trailing | Gõ số, ví dụ `1` = 1% |
+
+⚠️ **Kiểu mới:** O đặt sai phía (LONG mà O thấp hơn giá) thì lệnh chốt lời limit
+**khớp ngay = đóng vị thế**.
 
 ⏱️ Từ lúc khớp đến lúc có SL/TP có thể chậm tới `delay_cho_va_khop` (mặc định 600
 giây). Muốn nhanh hơn thì giảm số này trong `config.ini` rồi bật lại bot.
 
-**Xoá lệnh:** tick cột **J** để xoá lệnh vào, **K** để xoá SL/TP, **M** để xoá mọi
-lệnh của mã. Muốn bỏ hẳn SL/TP thì đổi **P = N** trước, nếu không vòng sau bot đặt lại.
+**Xoá lệnh:** tick **J** để xoá lệnh vào, **K** để xoá SL/TP, **M** để xoá mọi lệnh của
+mã. Muốn bỏ hẳn SL/TP thì đổi **P = N** trước, nếu không vòng sau bot đặt lại.
 
 ---
 
 ## 4. Các bước mỗi lần đặt lệnh
 
 1. Đặt **B2 = CHỜ**.
-2. Điền mã, đòn bẩy, giá, kiểu (hoặc callback nếu dùng kiểu cũ), vốn.
-3. Đổi **B2 = LONG** hoặc **SHORT**. Bot vào lệnh ở vòng quét kế tiếp.
+2. Điền mã, đòn bẩy, giá (đúng phía), kiểu (hoặc callback nếu dùng kiểu cũ), vốn ≥ 10 USDT.
+3. Đổi **B2 = LONG** hoặc **SHORT**. Bot vào lệnh ở vòng quét kế tiếp
+   (`delay_vao_lenh`, mặc định 60 giây).
 4. Lệnh khớp → sang tab Chờ và khớp, kiểm tra N/O rồi gõ **P = Y**.
 5. Kiểm tra: Telegram báo, cột G/H (Có SL / Có TP) chuyển thành **Y**.
+
+---
+
+## 5. Thử lệnh thật trước khi chạy bot (tuỳ chọn)
+
+`tests/thu_dat_lenh_that.py` lần lượt đặt từng loại lệnh ở trên, bằng đúng hàm của bot,
+rồi **huỷ ngay**. Mặc định chỉ in kế hoạch.
+
+1. Mở file, điền key, mã, vốn.
+2. Đổi `CHAY_THAT = True`.
+3. Chạy:
+   ```
+   python tests/thu_dat_lenh_that.py
+   ```
+4. Xem log ở `logs/thu_dat_lenh_*.txt`.
+
+⚠️ Đã điền key thì **đừng commit/push** file đó.
