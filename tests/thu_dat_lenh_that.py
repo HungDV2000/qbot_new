@@ -133,6 +133,9 @@ exchange = ccxt.binance({
     "apiKey": API_KEY,
     "secret": API_SECRET,
     "options": {"defaultType": "future", "fetchCurrencies": False,
+                # Chỉ nạp mã Futures USDⓈ-M. Mặc định ccxt nạp cả Spot + gọi API Margin
+                # (/sapi/v1/margin/allPairs) → key CHỈ bật Futures bị -2015.
+                "fetchMarkets": {"types": ["linear"]}, "fetchMargins": False,
                 "adjustForTimeDifference": True, "recvWindow": 60000},
 })
 helper = BinanceOrderHelper(exchange)

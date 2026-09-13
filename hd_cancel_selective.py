@@ -64,6 +64,11 @@ exchange = ccxt.binance({
     'options': {
         'defaultType': 'future',
         'fetchCurrencies': False,
+        # Chỉ nạp mã Futures USDⓈ-M. ccxt 4.5 mặc định nạp cả Spot + gọi API Margin
+        # (/sapi/v1/margin/allPairs) → key CHỈ bật Futures bị -2015, load_markets hỏng,
+        # mọi mã bị coi là 'không tồn tại' → bot âm thầm không đặt lệnh.
+        'fetchMarkets': {'types': ['linear']},
+        'fetchMargins': False,
         'adjustForTimeDifference': True,
         'recvWindow': 60000,
     }

@@ -52,6 +52,11 @@ exchange = exchange_class({
     'options': {
         'defaultType': 'future',
         'fetchCurrencies': False,          # [A2] tránh gọi /sapi getall (signed) khi load_markets
+        # Chỉ nạp mã Futures USDⓈ-M. ccxt 4.5 mặc định nạp cả Spot + gọi API Margin
+        # (/sapi/v1/margin/allPairs) → key CHỈ bật Futures bị -2015, load_markets hỏng,
+        # mọi mã bị coi là 'không tồn tại' → bot âm thầm không đặt lệnh.
+        'fetchMarkets': {'types': ['linear']},
+        'fetchMargins': False,
         'adjustForTimeDifference': True,   # [A2] tự đồng bộ clock -> hết lỗi -1021
         'recvWindow': 60000,               # [A2+Fix2] nới cửa sổ timestamp lên max 60s
     }
