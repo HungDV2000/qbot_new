@@ -85,25 +85,25 @@ class TestTachDuLieu(unittest.TestCase):
 class TestLocVaKiemTra(unittest.TestCase):
     def test_cot_Bat_N_thi_loai(self):
         _, bang = sc.phan_tich_bang(BANG_MAU)
-        bat = sc.loc_dang_bat(bang)
+        bat, _ = sc.loc_dang_bat(bang)
         self.assertEqual(sorted(bat), ["q2pri", "q2pub"])
         self.assertNotIn("q3fu", bat, "q3fu để Bật=N nên phải bị loại")
 
     def test_khong_khai_cot_Bat_thi_coi_nhu_bat(self):
         bang = {"x": {"__ten__": "x"}}
-        self.assertIn("x", sc.loc_dang_bat(bang))
+        self.assertIn("x", sc.loc_dang_bat(bang)[0])
 
-    def test_thieu_key_thi_DUNG(self):
+    def test_thieu_key_thi_bo_dong(self):
         bang = {"x": {"__ten__": "x", "key_binance": "K"}}   # thiếu secret + sheet
-        with self.assertRaises(sc.LoiSheetCauHinh) as e:
-            sc.kiem_tra_du_khoa(bang)
-        self.assertIn("secret_binance", str(e.exception))
-        self.assertIn("spreadsheet_id", str(e.exception))
+        loi = sc.kiem_tra_du_khoa(bang)
+        self.assertEqual([t for t, _ in loi], ["x"])
+        self.assertIn("secret_binance", loi[0][1])
+        self.assertIn("spreadsheet_id", loi[0][1])
 
     def test_du_key_thi_qua(self):
         bang = {"x": {"__ten__": "x", "key_binance": "K",
                       "secret_binance": "S", "spreadsheet_id": "SH"}}
-        sc.kiem_tra_du_khoa(bang)      # không được ném
+        self.assertEqual(sc.kiem_tra_du_khoa(bang), [])
 
 
 class TestTimTaiKhoan(unittest.TestCase):

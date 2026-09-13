@@ -3,7 +3,7 @@
 Sheet tổng bị sửa ĐỘT NGỘT / sửa DỞ — bot phải an toàn.
 
 Kịch bản thật: đang dán key thì bot đọc; chép dòng quên sửa key; gõ "2,5";
-gõ "Không" vào cột Bật; ô B1 là công thức NOW(); tắt/xoá tài khoản khi bot
+gõ "Không" vào cột Bật; một dòng sai giữa nhiều dòng đúng; tắt/xoá tài khoản khi bot
 đang chạy. Chạy offline, không mạng.
 """
 import os, sys, types, unittest
@@ -26,47 +26,62 @@ def _bang(**them):
     return b
 
 
+def _ten_loi(loi):
+    return {t for t, _ in loi}
+
+
+def _chu(loi):
+    return "\n".join(m for _, m in loi)
+
+
 class TestDuLieuSuaDo(unittest.TestCase):
-    def test_hop_le_thi_qua(self):
-        sc.kiem_tra_du_lieu(_bang())
+    """Dòng sai chỉ bị BỎ RIÊNG — không ném lỗi chặn cả bảng."""
 
-    def test_trung_api_key_giua_hai_tai_khoan_thi_DUNG(self):
-        with self.assertRaises(sc.LoiSheetCauHinh) as e:
-            sc.kiem_tra_du_lieu(_bang(kh_b={"key_binance": K1}))
-        self.assertIn("ĐẶT LỆNH TRÙNG", str(e.exception))
+    def test_hop_le_thi_khong_loi(self):
+        self.assertEqual(sc.kiem_tra_du_lieu(_bang()), [])
 
-    def test_trung_sheet_id_thi_DUNG(self):
-        with self.assertRaises(sc.LoiSheetCauHinh):
-            sc.kiem_tra_du_lieu(_bang(kh_b={"spreadsheet_id": "SH_A"}))
+    def test_trung_api_key_thi_bo_CA_HAI_dong(self):
+        loi = sc.kiem_tra_du_lieu(_bang(kh_b={"key_binance": K1}))
+        self.assertEqual(_ten_loi(loi), {"kh_a", "kh_b"}, "không biết dòng nào đúng → bỏ cả hai")
+        self.assertIn("ĐẶT LỆNH TRÙNG", _chu(loi))
+
+    def test_trung_key_ma_secret_khac_thi_bao_DAN_NHAM(self):
+        """Ca thật: q3trust và q2Bio cùng Key, khác Secret — khách chép nhầm Key."""
+        loi = sc.kiem_tra_du_lieu(_bang(kh_b={"key_binance": K1}))
+        self.assertIn("DÁN NHẦM", _chu(loi))
+        self.assertIn("sub-account", _chu(loi))
+
+    def test_trung_sheet_id_thi_bo_ca_hai(self):
+        loi = sc.kiem_tra_du_lieu(_bang(kh_b={"spreadsheet_id": "SH_A"}))
+        self.assertEqual(_ten_loi(loi), {"kh_a", "kh_b"})
 
     def test_key_dan_thieu_hoac_dinh_khoang_trang(self):
         for xau in ("abc123", "A" * 30 + " " + "A" * 30, "A" * 32 + "\n"):
             with self.subTest(xau=xau[:10]):
-                with self.assertRaises(sc.LoiSheetCauHinh) as e:
-                    sc.kiem_tra_du_lieu(_bang(kh_a={"key_binance": xau}))
-                self.assertIn("dán thiếu", str(e.exception))
+                loi = sc.kiem_tra_du_lieu(_bang(kh_a={"key_binance": xau}))
+                self.assertEqual(_ten_loi(loi), {"kh_a"})
+                self.assertIn("dán thiếu", _chu(loi))
 
     def test_dau_phay_thap_phan_kieu_Viet(self):
         b = _bang(kh_a={"default_sl_rate_layer_1": "2,5"})
-        sc.kiem_tra_du_lieu(b)
+        self.assertEqual(sc.kiem_tra_du_lieu(b), [])
         self.assertEqual(b["kh_a"]["default_sl_rate_layer_1"], "2.5")
 
-    def test_so_sai_thi_DUNG(self):
+    def test_so_sai_thi_bo_dong(self):
         for gt in ("abc", "150", "0", "-2"):
             with self.subTest(gt=gt):
-                with self.assertRaises(sc.LoiSheetCauHinh):
-                    sc.kiem_tra_du_lieu(_bang(kh_a={"default_tp_rate_layer_1": gt}))
+                loi = sc.kiem_tra_du_lieu(_bang(kh_a={"default_tp_rate_layer_1": gt}))
+                self.assertEqual(_ten_loi(loi), {"kh_a"})
 
     def test_ten_cot(self):
         b = _bang(kh_a={"leg1_col": " d "})
-        sc.kiem_tra_du_lieu(b)
+        self.assertEqual(sc.kiem_tra_du_lieu(b), [])
         self.assertEqual(b["kh_a"]["leg1_col"], "D")
-        with self.assertRaises(sc.LoiSheetCauHinh):
-            sc.kiem_tra_du_lieu(_bang(kh_a={"leg1_col": "D1"}))
+        self.assertEqual(_ten_loi(sc.kiem_tra_du_lieu(_bang(kh_a={"leg1_col": "D1"}))), {"kh_a"})
 
     def test_co_khong_tieng_Viet(self):
         b = _bang(kh_a={"allow_dca": "Có", "default_allow_order": "không"})
-        sc.kiem_tra_du_lieu(b)
+        self.assertEqual(sc.kiem_tra_du_lieu(b), [])
         self.assertEqual(b["kh_a"]["allow_dca"], "true")
         self.assertEqual(b["kh_a"]["default_allow_order"], "N")
 
@@ -74,123 +89,89 @@ class TestDuLieuSuaDo(unittest.TestCase):
 class TestCotBat(unittest.TestCase):
     def test_Khong_la_TAT(self):
         """Lỗi cũ: gõ 'Không' bị hiểu là BẬT."""
-        b = sc.loc_dang_bat({"a": {"__bat__": "Không"}, "b": {"__bat__": "Có"}, "c": {}})
+        b, bo_qua = sc.loc_dang_bat({"a": {"__bat__": "Không"}, "b": {"__bat__": "Có"}, "c": {}})
         self.assertEqual(sorted(b), ["b", "c"])
+        self.assertEqual(bo_qua, [])
 
-    def test_gia_tri_la_thi_DUNG_khong_doan(self):
-        with self.assertRaises(sc.LoiSheetCauHinh):
-            sc.loc_dang_bat({"a": {"__bat__": "tạm dừng"}})
+    def test_gia_tri_la_thi_bo_rieng_dong_do(self):
+        b, bo_qua = sc.loc_dang_bat({"a": {"__bat__": "tạm dừng"}, "b": {"__bat__": "Y"}})
+        self.assertEqual(list(b), ["b"], "không đoán, nhưng dòng khác vẫn chạy")
+        self.assertEqual(_ten_loi(bo_qua), {"a"})
 
     def test_nap_tu_bang_chay_du_moi_buoc(self):
         rows = [["PHIÊN BẢN", "3"],
                 ["Tài khoản", "Bật", "API Key", "API Secret", "Sheet ID", "%SL"],
                 ["kh_a", "Y", K1, S1, "SH_A", "2,5"],
                 ["kh_b", "Không", K2, S2, "SH_B", "3"]]
-        pb, bang = sc.nap_tu_bang(rows)
-        self.assertEqual((pb, list(bang)), ("3", ["kh_a"]))
+        pb, bang, bo_qua = sc.nap_tu_bang(rows)
+        self.assertEqual((pb, list(bang), bo_qua), ("3", ["kh_a"], []))
         self.assertEqual(bang["kh_a"]["default_sl_rate_layer_1"], "2.5")
 
+    def test_MOT_dong_loi_KHONG_lam_dung_ca_bang(self):
+        """Máy tự bật Y: một dòng sai không được chặn các tài khoản khác."""
+        rows = [["PHIÊN BẢN", "3"],
+                ["Tài khoản", "Bật", "API Key", "API Secret", "Sheet ID"],
+                ["kh_a", "Y", K1, S1, "SH_A"],
+                ["kh_b", "Y", "abc", S2, "SH_B"],          # key cụt
+                ["kh_c", "tạm dừng", K2, S2, "SH_C"],      # Bật lạ
+                ["kh_d", "Y", K1, S2, "SH_D"]]             # trùng key kh_a
+        _, bang, bo_qua = sc.nap_tu_bang(rows)
+        self.assertEqual(list(bang), [], "kh_a trùng key với kh_d → cả hai bị bỏ")
+        self.assertEqual(_ten_loi(bo_qua), {"kh_a", "kh_b", "kh_c", "kh_d"})
+        rows[5][2] = "E" * 64                              # sửa kh_d
+        _, bang, bo_qua = sc.nap_tu_bang(rows)
+        self.assertEqual(sorted(bang), ["kh_a", "kh_d"])
+        self.assertEqual(_ten_loi(bo_qua), {"kh_b", "kh_c"})
 
-class TestXacMinhTruocKhiNap(unittest.TestCase):
+    def test_khong_con_tai_khoan_nao_Bat_thi_khong_nem(self):
+        rows = [["PHIÊN BẢN", "3"], ["Tài khoản", "Bật", "API Key", "API Secret", "Sheet ID"],
+                ["kh_a", "N", K1, S1, "SH_A"]]
+        self.assertEqual(sc.nap_tu_bang(rows)[1:], ({}, []),
+                         "tắt hết không phải lỗi — điều phối ngồi chờ tài khoản được Bật lại")
+
+
+class TestDanhGiaKhiSheetSuaDotNgot(unittest.TestCase):
     """Không bao giờ tự sát vào một cấu hình hỏng."""
 
-    def _chay(self, nap, thu_dang_nhap=True, ten="kh_a", key=K1, sec=S1):
-        with mock.patch.object(sc, "nap", nap), \
-             mock.patch.object(cw, "_thu_dang_nhap_binance", lambda k, s: thu_dang_nhap), \
-             mock.patch.object(cw, "_canh_bao", lambda *a, **k: None):
-            return cw.xac_minh_cau_hinh_moi("BOT", "SID", ten, key, sec)
+    def setUp(self):
+        cw._key_hong.clear()
 
-    def test_loi_mang_thi_thu_lai(self):
-        def no(*a): raise sc.LoiDocSheet("503")
-        self.assertEqual(self._chay(no)[0], "thu_lai")
+    def _chay(self, hop_le, bo_qua=(), thu_dang_nhap=True, goi=None):
+        goi = [] if goi is None else goi
+        with mock.patch.object(cw, "_thu_dang_nhap_binance", lambda k, s: goi.append(1) or thu_dang_nhap), \
+             mock.patch.object(cw, "_canh_bao", lambda *a, **k: None):
+            return cw.danh_gia("kh_a", _bang()["kh_a"], hop_le, list(bo_qua))
 
     def test_du_lieu_hong_thi_GIU_NGUYEN(self):
-        def no(*a): raise sc.LoiSheetCauHinh("trùng key")
-        self.assertEqual(self._chay(no)[0], "giu_nguyen")
+        self.assertEqual(self._chay({}, [("kh_a", "trùng key")])[0], "giu_loi")
 
     def test_tai_khoan_bi_xoa_hoac_tat(self):
-        self.assertEqual(self._chay(lambda *a: ("8", {"kh_b": _bang()["kh_b"]}))[0], "bi_tat")
+        self.assertEqual(self._chay({"kh_b": _bang()["kh_b"]})[0], "tat")
 
     def test_key_moi_khong_dang_nhap_duoc_thi_GIU_NGUYEN(self):
-        moi = _bang(kh_a={"key_binance": "E" * 64})
-        kq, ly_do = self._chay(lambda *a: ("8", moi), thu_dang_nhap=False)
-        self.assertEqual(kq, "giu_nguyen")
+        kq, ly_do = self._chay(_bang(kh_a={"key_binance": "E" * 64}), thu_dang_nhap=False)
+        self.assertEqual(kq, "giu_loi")
         self.assertIn("KHÔNG đăng nhập được Binance", ly_do)
 
     def test_key_moi_dang_nhap_duoc_thi_nap(self):
-        moi = _bang(kh_a={"key_binance": "E" * 64})
-        self.assertEqual(self._chay(lambda *a: ("8", moi), thu_dang_nhap=True)[0], "nap_lai")
+        self.assertEqual(self._chay(_bang(kh_a={"key_binance": "E" * 64}))[0], "nap_lai")
 
     def test_dong_cua_minh_khong_doi_thi_KHONG_khoi_dong_lai(self):
         """Đổi key kh_b → kh_a (dòng y nguyên) phải chạy tiếp, không khởi động lại."""
-        moi = _bang(kh_b={"key_binance": "E" * 64})
         goi = []
-        with mock.patch.object(sc, "nap", lambda *a: ("8", moi)), \
-             mock.patch.object(cw, "_thu_dang_nhap_binance", lambda k, s: goi.append(1) or True):
-            kq = cw.xac_minh_cau_hinh_moi("BOT", "SID", "kh_a", K1, S1, _bang()["kh_a"])
+        kq = self._chay(_bang(kh_b={"key_binance": "E" * 64}), goi=goi)
         self.assertEqual(kq[0], "khong_doi")
         self.assertEqual(goi, [])
 
     def test_key_khong_doi_thi_KHONG_goi_Binance(self):
         goi = []
-        with mock.patch.object(sc, "nap", lambda *a: ("8", _bang())), \
-             mock.patch.object(cw, "_thu_dang_nhap_binance", lambda k, s: goi.append(1) or True):
-            self.assertEqual(cw.xac_minh_cau_hinh_moi("BOT", "SID", "kh_a", K1, S1)[0], "nap_lai")
+        self.assertEqual(self._chay(_bang(kh_a={"default_sl_rate_layer_1": "3"}), goi=goi)[0], "nap_lai")
         self.assertEqual(goi, [], "đổi %SL mà cũng gọi Binance là thừa")
 
-
-class _CstGia(types.ModuleType):
-    def __init__(self):
-        super().__init__("cst")
-        self.nap_tu_sheet, self.bot_id, self.config_spreadsheet_id = True, "BOT", "SID"
-        self.account, self.key_binance, self.secret_binance = "kh_a", K1, S1
-        self.account_name, self.chat_id, self.bot_token = "kh_a", "", ""
-        self.config = mock.Mock(getint=lambda *a, **k: 300)
-        self.nha_khoa = lambda: None
-
-
-class TestApDung(unittest.TestCase):
-    def setUp(self):
-        self._cu = sys.modules.get("cst")
-        sys.modules["cst"] = _CstGia()
-        cw.khoi_tao("7")
-        self.nap_lai = []
-        self.p = [mock.patch.object(cw, "co_thay_doi", lambda *a: (True, "8")),
-                  mock.patch.object(cw, "_canh_bao", lambda *a, **k: None),
-                  mock.patch.object(cw, "khoi_dong_lai", lambda *a, **k: self.nap_lai.append(a))]
-        for x in self.p: x.start()
-
-    def tearDown(self):
-        for x in self.p: x.stop()
-        if self._cu is None: sys.modules.pop("cst", None)
-        else: sys.modules["cst"] = self._cu
-
-    def test_vua_khoi_dong_thi_CHUA_nap_chong_bao_B1_cong_thuc(self):
-        with mock.patch.object(cw, "_bat_dau", __import__("time").time()), \
-             mock.patch.object(cw, "xac_minh_cau_hinh_moi", lambda *a: ("nap_lai", "8")):
-            cw.kiem_tra_va_ap_dung()
-        self.assertEqual(self.nap_lai, [])
-
-    def test_du_lieu_hong_thi_GIU_va_ghi_nho_phien_ban_loi(self):
-        with mock.patch.object(cw, "_bat_dau", 0), \
-             mock.patch.object(cw, "xac_minh_cau_hinh_moi", lambda *a: ("giu_nguyen", "x")):
-            cw.kiem_tra_va_ap_dung()
-        self.assertEqual(self.nap_lai, [])
-        self.assertEqual(cw._phien_ban_loi, "8")
-
-    def test_hop_le_thi_nap(self):
-        with mock.patch.object(cw, "_bat_dau", 0), \
-             mock.patch.object(cw, "xac_minh_cau_hinh_moi", lambda *a: ("nap_lai", "8")):
-            cw.kiem_tra_va_ap_dung()
-        self.assertEqual(len(self.nap_lai), 1)
-
-    def test_phien_ban_da_biet_hong_thi_khong_doc_lai(self):
-        cw.khoi_tao("7"); cw._phien_ban_loi = "8"
-        self.p[0].stop()
-        cw._lan_kiem_cuoi = 0
-        with mock.patch.object(sc, "doc_o_phien_ban", lambda *a: "8"):
-            self.assertEqual(cw.co_thay_doi("BOT", "SID", 0), (False, None))
-        self.p[0].start()
+    def test_B1_la_cong_thuc_tu_doi_KHONG_lam_khoi_dong_lai(self):
+        """Bản cũ dò bằng B1 → B1 = NOW() làm bot khởi động lại liên tục. Nay so nội dung."""
+        for _ in range(3):
+            self.assertEqual(self._chay(_bang())[0], "khong_doi")
 
 
 class TestMaThoatChoDieuPhoi(unittest.TestCase):

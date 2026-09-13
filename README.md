@@ -53,7 +53,8 @@ Soát cấu hình trước khi bật (không đặt lệnh): `python kiem_tra_ca
 | Xem | Các cửa sổ "QBot - …" | `./status.sh` |
 
 Chạy cho "mọi tài khoản" = bot tự mở một tiến trình con cho **mỗi tài khoản đang
-Bật** trên sheet tổng; thêm/tắt tài khoản trên sheet (đổi ô B1) thì tự theo.
+Bật** trên sheet tổng; bật Y / tắt N / sửa key trên sheet là bot tự theo —
+**không cần đổi ô B1**.
 
 ### Bật tất cả một lúc (Linux)
 
@@ -71,8 +72,8 @@ Bật** trên sheet tổng; thêm/tắt tài khoản trên sheet (đổi ô B1) 
 [docs/HUONG_DAN_TUNG_BOT.md](docs/HUONG_DAN_TUNG_BOT.md).
 
 Tài khoản (API key, sheet riêng, %SL/%TP, Telegram riêng, Bật/Tắt) nằm trên
-**sheet tổng**. Sửa trên sheet rồi **đổi ô B1** — bot tự xác minh và nạp lại, không
-cần vào VPS. Dữ liệu sửa dở (key cụt, trùng key, gõ chữ vào ô số…) thì bot **giữ
+**sheet tổng**. Sửa trên sheet là bot **tự nhận** trong vòng `config_reload_seconds` (mặc
+định 60 giây) — không cần đổi ô B1, không cần vào VPS. Dữ liệu sửa dở (key cụt, trùng key, gõ chữ vào ô số…) thì bot **giữ
 nguyên cấu hình đang chạy** và báo Telegram. Chi tiết: `docs/HUONG_DAN_SHEET_TONG.md`.
 
 Google chỉ cho **60 lượt đọc/phút**, dùng **chung** mọi tài khoản:
@@ -143,8 +144,9 @@ Bản đầy đủ của chúng nằm ở `qbot_setup/`.
 | "⛔ … ĐANG CHẠY" | Bot đó đã chạy cho tài khoản này — đóng cửa sổ/dừng bản cũ trước |
 | Vào lệnh nhưng không có SL/TP | `hd_update_cho_va_khop` không chạy, hoặc cột P ≠ Y |
 | Đặt lệnh trùng | Hai thư mục bot cùng chạy chung API key. Khoá chống trùng chỉ có tác dụng trong từng thư mục |
-| Telegram báo *"GIỮ NGUYÊN cấu hình đang chạy"* | Dữ liệu mới trên sheet tổng có lỗi (xem tin nhắn). Sửa rồi **đổi ô B1 thêm lần nữa** |
-| Sửa sheet tổng mà bot không đổi | Quên đổi ô B1 |
+| Telegram báo *"GIỮ NGUYÊN cấu hình đang chạy"* | Dòng đang chạy bị sửa hỏng (xem tin nhắn). Sửa lại dòng đó — bot tự nhận |
+| Telegram báo *"bị BỎ QUA, không chạy"* | Dòng đó có lỗi (key dán thiếu, trùng key…). Chỉ dòng đó không chạy, các dòng khác vẫn chạy. Sửa là bot tự mở |
+| Sửa sheet tổng mà bot không đổi | Chờ đủ `config_reload_seconds`; hoặc dòng đó đang lỗi — xem Telegram / `kiem_tra_cau_hinh.py` |
 
 Log: `logs/<tài_khoản>/`, lỗi ở `logs/<tài_khoản>/error.log`.
 

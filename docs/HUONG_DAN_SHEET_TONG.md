@@ -53,9 +53,9 @@ một tài khoản: ba lệnh vào gộp thành **một vị thế**, và lệnh
 (`closePosition`) sẽ **đóng luôn cả lớp 2 và 3**. Bot chặn được trùng y hệt một
 key, nhưng không nhận ra được hai key khác nhau cùng thuộc một tài khoản.
 
-**Dòng 1** — ô `B1` là **số phiên bản**. Sửa bất cứ ô nào bên dưới thì **phải
-đổi ô này** (tăng lên 1 chẳng hạn). Bot chỉ nhìn ô này để biết có thay đổi.
-Không đổi B1 thì **bot không biết là bạn vừa sửa gì**.
+**Dòng 1** — ô `B1` để ghi chú tuỳ ý, **không cần đổi**. Bot tự đọc lại cả bảng
+mỗi `config_reload_seconds` (mặc định 60 giây) và **so nội dung từng dòng** — sửa
+ô nào (bật Y, đổi key…) là bot tự nhận. Hàm tự động bật/tắt chỉ cần sửa cột Bật.
 
 **Dòng 2** — tiêu đề cột. **Dòng 3 trở đi** — mỗi dòng một tài khoản.
 
@@ -102,7 +102,7 @@ Tiêu đề **không phân biệt hoa/thường và không cần dấu**: `Tài 
 [global]
 bot_id = QBOT01
 config_spreadsheet_id = 1AbC...XyZ
-config_reload_seconds = 300
+config_reload_seconds = 60
 ```
 
 Giữ nguyên `credentials.json` và `token.json` — vẫn cần để mở được sheet.
@@ -132,8 +132,7 @@ Chạy lệnh này **mỗi lần sửa sheet**.
 ## 6. Đổi key khi bot đang chạy
 
 1. Sửa API Key / Secret trên sheet
-2. **Đổi ô B1** (tăng số phiên bản)
-3. Chờ tối đa `config_reload_seconds` (mặc định 5 phút)
+2. Chờ tối đa `config_reload_seconds` (mặc định 60 giây) — **không cần đổi ô B1**
 
 Bot sẽ tự khởi động lại và chạy bằng key mới. Không cần vào VPS.
 
@@ -159,8 +158,8 @@ bằng cấu hình cũ** thay vì chết — để không mất giám sát vị 
 | `THIẾU bot_id` | Có khai `config_spreadsheet_id` nhưng quên `bot_id` |
 | `Tài khoản '…' trùng với '…'` | Hai dòng cùng tên (kể cả khác hoa/thường). Bot không đoán — đổi tên cho khác hẳn |
 | `Dòng 2 thiếu cột 'Tài khoản'` | Tiêu đề dòng 2 sai, hoặc dữ liệu bắt đầu từ dòng khác |
-| Sửa sheet mà bot không đổi | **Quên đổi ô B1** |
-| `không tài khoản nào đang Bật` | Cột Bật đều là `N` |
+| Sửa sheet mà bot không đổi | Chờ đủ `config_reload_seconds`; hoặc dòng đó đang lỗi — xem Telegram |
+| Không còn tài khoản nào chạy | Cột Bật đều là `N` (hoặc mọi dòng Bật đều lỗi). Bot **không thoát** — ngồi chờ, có dòng Bật hợp lệ là tự mở |
 
 **Sheet đọc lỗi thì bot dừng hẳn**, không dùng giá trị dự phòng — theo yêu cầu:
 thà không chạy còn hơn chạy bằng key cũ mà tưởng đã đổi. Lệnh SL/TP đã đặt lên
@@ -170,9 +169,14 @@ Binance **vẫn nằm nguyên trên sàn** khi bot dừng.
 
 ## 8. Sheet bị sửa ĐỘT NGỘT / sửa DỞ — bot làm gì
 
-Nguyên tắc: **bot không bao giờ tự nạp vào một cấu hình hỏng.** Thấy ô B1 đổi, bot
-đang chạy đọc trọn cấu hình mới và **soát trước**; chỉ khi ổn mới nạp lại. Có lỗi
-thì **giữ nguyên cấu hình đang chạy** và báo Telegram.
+Nguyên tắc: **bot không bao giờ tự nạp vào một cấu hình hỏng**, và **một dòng lỗi
+không bao giờ làm đứng các dòng khác.** Mỗi `config_reload_seconds`, tiến trình
+điều phối đọc lại cả bảng, **soát từng dòng**: dòng đúng thì áp dụng, dòng lỗi thì
+bỏ riêng dòng đó + báo Telegram.
+
+Chỉ **tiến trình điều phối** đọc sheet (6 bot = 6 lượt đọc Google mỗi chu kỳ, dù
+có bao nhiêu tài khoản). Tiến trình con nhận lệnh qua file cục bộ
+`pids/<tài khoản>/<bot>.lenh`, không tốn lượt Google.
 
 Bot chỉ nạp lại lúc đang **nghỉ giữa hai vòng quét** — không bao giờ cắt ngang lúc
 vừa vào lệnh mà chưa kịp đặt cắt lỗ.
@@ -182,18 +186,20 @@ vừa vào lệnh mà chưa kịp đặt cắt lỗ.
 | Đổi API key hợp lệ của 1 tài khoản | Bot **thử đăng nhập Binance bằng key mới trước**, được thì **chỉ tài khoản đó** khởi động lại. Tài khoản khác chạy tiếp, không bị động tới |
 | Đang dán key thì bot đọc (key cụt, dính khoảng trắng) | Giữ nguyên key đang chạy + báo *"dán thiếu?"* |
 | Key mới **không đăng nhập được** Binance (sai secret, chưa bật Futures, chưa thêm IP VPS) | Giữ nguyên + báo *"KHÔNG đăng nhập được Binance"* |
-| Chép dòng quên sửa → **hai tài khoản trùng API key** hoặc **trùng Sheet ID** | Giữ nguyên + báo *"ĐẶT LỆNH TRÙNG"*. Trùng key = hai tiến trình cùng giao dịch một tài khoản |
+| Chép dòng quên sửa → **hai tài khoản trùng API key** hoặc **trùng Sheet ID** | **Bỏ cả hai dòng** (không biết dòng nào đúng) + báo *"ĐẶT LỆNH TRÙNG"*. Key giống mà Secret khác → báo thêm *"DÁN NHẦM Key"*. Dòng nào đang chạy thì giữ nguyên cấu hình cũ |
 | Gõ `2,5` (dấu phẩy kiểu Việt) | Hiểu là `2.5` |
-| Gõ chữ vào ô số, %SL/%TP ngoài khoảng 0–100, tên cột sai (`D1` thay vì `D`) | Giữ nguyên + báo rõ ô nào sai |
-| Cột **Bật** gõ `Không` | Tắt tài khoản. *(Bản cũ hiểu nhầm `Không` là BẬT.)* Giá trị lạ như `tạm dừng` → báo lỗi, không đoán |
+| Gõ chữ vào ô số, %SL/%TP ngoài khoảng 0–100, tên cột sai (`D1` thay vì `D`) | Bỏ riêng dòng đó + báo rõ ô nào sai |
+| Nhiều dòng, **một dòng lỗi** | Các dòng đúng **vẫn chạy**; chỉ dòng lỗi bị bỏ qua + báo *"bị BỎ QUA, không chạy"* |
+| Cột **Bật** gõ `Không` | Tắt tài khoản. *(Bản cũ hiểu nhầm `Không` là BẬT.)* Giá trị lạ như `tạm dừng` → bỏ riêng dòng đó + báo, không đoán |
 | **Thêm** một dòng tài khoản | Tự mở bot cho tài khoản mới trong vòng `config_reload_seconds` |
-| **Tắt / xoá** một dòng tài khoản | Bot của tài khoản đó tự dừng và không bật lại |
-| Ô B1 là **công thức tự đổi** (`NOW()`, `RAND()`…) | Vừa khởi động chưa đủ 2 phút thì chưa nạp + báo. **Hãy gõ số tay** vào B1 |
+| **Tắt / xoá** một dòng tài khoản | Bot của tài khoản đó tự dừng (lúc đang nghỉ giữa hai vòng) |
+| **Tắt hết** rồi bật lại | Điều phối không thoát, ngồi chờ — bật Y là tự mở lại |
 | Google chập chờn đúng lúc bot dò | Bỏ qua, thử lại lần dò sau |
 | Sheet tổng đọc lỗi **lúc bật bot** | **Dừng hẳn** — không có cấu hình nào đáng tin để chạy |
 
-**Sau khi bot báo lỗi**: sửa trên sheet rồi **đổi ô B1 thêm lần nữa**. Bot ghi nhớ
-phiên bản đã báo lỗi và không đọc lại nó.
+**Sau khi bot báo lỗi**: chỉ cần sửa dòng đó trên sheet — lần đọc sau bot tự nhận.
+Cùng một lỗi không báo Telegram lặp lại quá 30 phút/lần. Bot vừa mở một tài khoản
+chưa đủ 2 phút thì chưa nạp lại tài khoản đó (chống bật/tắt liên tục).
 
 ### ⚠️ Đổi sang key của TÀI KHOẢN BINANCE KHÁC
 

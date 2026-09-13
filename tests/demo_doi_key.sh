@@ -6,7 +6,7 @@
 #
 # Kịch bản đúng như khách sẽ làm:
 #   1. Bot chạy, nạp key từ sheet tổng
-#   2. Sửa key trên sheet + đổi ô phiên bản
+#   2. Sửa key trên sheet (KHÔNG cần đổi ô phiên bản B1)
 #   3. Bot TỰ khởi động lại, chạy bằng key mới — không ai vào VPS
 #
 # Kiểm nghiêm ngặt: KHÔNG BAO GIỜ có hai tiến trình cùng chạy (đặt lệnh trùng).
@@ -44,17 +44,13 @@ from sheet_config_that import LoiSheetCauHinh, LoiDocSheet, tim_tai_khoan
 def _doc():
     pb, key = io.open("trang_thai.txt", encoding="utf-8").read().strip().split("|")
     return pb, key
-def doc_o_phien_ban(sid, tab):
-    return _doc()[0]
 def nap(bot_id, sid):
     pb, key = _doc()
     import sheet_config_that as t
     bang = [["PHIÊN BẢN", pb],
             ["Tài khoản", "Bật", "API Key", "API Secret", "Sheet ID"],
-            ["kh_a", "Y", key, "SEC_A", "SHEET_A"]]
-    _pb, b = t.phan_tich_bang(bang)
-    b = t.loc_dang_bat(b); t.kiem_tra_du_khoa(b)
-    return _pb, b
+            ["kh_a", "Y", (key + "x" * 64)[:64], "SEC_A" + "x" * 59, "SHEET_A"]]
+    return t.nap_tu_bang(bang, bot_id)          # KIỂM TRA DỮ LIỆU THẬT
 EOF
 
 # config.ini tối thiểu — đúng như khách sẽ có
@@ -89,10 +85,10 @@ echo "     ↳ PID ban đầu: $PID1"
 [ -f "pids/kh_a/hd_giadinh.lock" ] && ok "Đã giành khoá chống chạy trùng" || ng "Không thấy file khoá"
 
 echo ""
-echo "▶ BƯỚC 2 — Sửa key trên sheet + đổi ô phiên bản"
+echo "▶ BƯỚC 2 — Sửa key trên sheet — KHÔNG đổi ô phiên bản B1"
 echo "────────────────────────────────────────────"
-echo "2|KEY_MOI" > trang_thai.txt
-echo "     ↳ đã đổi: phiên bản 1→2, key KEY_CU→KEY_MOI"
+echo "1|KEY_MOI" > trang_thai.txt
+echo "     ↳ đã đổi: key KEY_CU→KEY_MOI (B1 vẫn là 1)"
 sleep 12
 
 echo ""

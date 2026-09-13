@@ -36,8 +36,8 @@ def in_nhip_chay(cst):
     ]
     for bot, khoa, giay in bang:
         print(f"     {bot:26} {giay:>8.0f}s   ({khoa})")
-    print(f"     {'dò ô B1 sheet tổng':26} "
-          f"{cst.config.getint('global', 'config_reload_seconds', fallback=300):>8}s   (config_reload_seconds)")
+    print(f"     {'đọc lại sheet tổng':26} "
+          f"{cst.config.getint('global', 'config_reload_seconds', fallback=60):>8}s   (config_reload_seconds)")
     print("     ⚠️  Sửa config.ini xong phải TẮT rồi BẬT LẠI bot mới có tác dụng.")
 
 
@@ -119,11 +119,22 @@ def main():
     if getattr(cst, 'nap_tu_sheet', False):
         print(f"   Mã bot (tab)   : {cst.bot_id}")
         print(f"   Sheet tổng     : {cst.config_spreadsheet_id}")
-        print(f"   Phiên bản      : {cst.config_sheet_version or '(trống)'}")
+        print(f"   Đọc lại bảng   : mỗi {cst.config.getint('global', 'config_reload_seconds', fallback=60)}s"
+              f" — KHÔNG cần đổi ô B1")
 
     accs = cst.accounts
     loi_global = 0
-    if not accs:
+    # Dòng Bật nhưng có lỗi: bot BỎ RIÊNG các dòng này, dòng khác vẫn chạy
+    bo_qua = getattr(cst, 'bo_qua_sheet', []) or []
+    if bo_qua:
+        print(f"\n❌ {len(bo_qua)} dòng trên sheet tổng bị BỎ QUA — bot KHÔNG chạy các dòng này:")
+        for tk, ly_do in bo_qua:
+            print(f"   ❌ [{tk}] {ly_do}")
+        loi_global += len(bo_qua)
+    if not accs and getattr(cst, 'nap_tu_sheet', False):
+        print("\n⚠️  Sheet tổng CHƯA có tài khoản nào hợp lệ đang Bật")
+        accs = []
+    elif not accs:
         print("\n⚠️  Không khai tài khoản nào → chế độ 1 tài khoản (dùng [global])")
         # Chế độ 1 tài khoản: key nằm thẳng ở [global], phải kiểm ở đây —
         # nếu không sẽ báo "hợp lệ" cho một config rỗng, bot bật lên mới chết.

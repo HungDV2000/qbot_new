@@ -102,7 +102,8 @@ def get_accounts():
 # ══════════════════════════════════════════════════════════════════════════════
 bot_id = config.get('global', 'bot_id', fallback='').strip()
 config_spreadsheet_id = config.get('global', 'config_spreadsheet_id', fallback='').strip()
-config_sheet_version = ''          # phiên bản đọc được, dùng để dò thay đổi
+config_sheet_version = ''          # ô B1 — chỉ để hiển thị, KHÔNG dùng để dò thay đổi
+bo_qua_sheet = []                  # [(tài khoản, lý do)] dòng Bật nhưng có lỗi → không chạy
 nap_tu_sheet = bool(config_spreadsheet_id)
 
 if nap_tu_sheet:
@@ -113,7 +114,7 @@ if nap_tu_sheet:
 
     import sheet_config
     try:
-        config_sheet_version, _bang_tk = sheet_config.nap(bot_id, config_spreadsheet_id)
+        config_sheet_version, _bang_tk, bo_qua_sheet = sheet_config.nap(bot_id, config_spreadsheet_id)
     except sheet_config.LoiSheetCauHinh as _e:
         # Theo quyết định của khách: đọc sheet lỗi thì DỪNG HẲN, không dùng
         # giá trị dự phòng — thà không chạy còn hơn chạy bằng cấu hình cũ mà
@@ -134,9 +135,13 @@ if nap_tu_sheet:
             # '%' phải nhân đôi, nếu không configparser hiểu là chuỗi thay thế
             config.set(_ten, _k, str(_v).replace('%', '%%'))
     config.set('global', 'accounts', ', '.join(_bang_tk.keys()))
-    print(f"📄 [CẤU HÌNH] Nạp từ sheet tổng — tab '{bot_id}', phiên bản "
-          f"{config_sheet_version or '(trống)'}, {len(_bang_tk)} tài khoản: "
-          f"{', '.join(_bang_tk.keys())}", flush=True)
+    print(f"📄 [CẤU HÌNH] Nạp từ sheet tổng — tab '{bot_id}', {len(_bang_tk)} tài khoản "
+          f"hợp lệ đang Bật: {', '.join(_bang_tk.keys()) or '(chưa có)'}", flush=True)
+    # Dòng lỗi chỉ bị BỎ RIÊNG — các dòng đúng vẫn chạy (máy tự bật Y, một dòng
+    # sai không được làm đứng cả hệ). Tiến trình con không in lại cho đỡ rối.
+    if bo_qua_sheet and os.environ.get('QBOT_SUPERVISED', '') != '1':
+        print(f"⚠️ [CẤU HÌNH] {len(bo_qua_sheet)} dòng bị BỎ QUA, không chạy "
+              f"(các dòng khác vẫn chạy):\n{sheet_config.mo_ta_bo_qua(bo_qua_sheet)}", flush=True)
 
 
 accounts = get_accounts()
@@ -194,12 +199,19 @@ import threading
 import time
 
 _sys_argv0 = _sys_mod.argv[0] if _sys_mod.argv else ''
+_la_file_bot = (os.path.basename(_sys_argv0).startswith('hd_')
+                and os.path.basename(_sys_argv0).endswith('.py'))
 
 
 def _run_for_all_accounts(entry_file):
     """
     Mở một tiến trình con cho MỖI tài khoản (chạy lại chính file bot này),
     chuyển tiếp màn hình có gắn tên tài khoản, và dừng sạch khi Ctrl+C.
+
+    Chế độ sheet tổng: CHỈ tiến trình này đọc bảng, mỗi `config_reload_seconds` —
+    so nội dung từng dòng (KHÔNG cần đổi ô B1), tự mở tài khoản mới Bật, ra lệnh
+    nạp lại / tắt cho con qua file pids/<tk>/<bot>.lenh. Hết tài khoản Bật thì
+    KHÔNG thoát — ngồi chờ tài khoản được Bật lại.
     Hàm này KHÔNG trả về — kết thúc bằng sys.exit().
     """
     # Kiểm tra TRƯỚC khi mở tiến trình con: tài khoản nào khai mà không có
@@ -218,13 +230,14 @@ def _run_for_all_accounts(entry_file):
 
     bot = entry_file[:-3]
     print("=" * 62, flush=True)
-    print(f"  {bot} — chạy cho {len(accounts)} tài khoản: {', '.join(accounts)}", flush=True)
+    print(f"  {bot} — chạy cho {len(accounts)} tài khoản: {', '.join(accounts) or '(chưa có)'}", flush=True)
+    if nap_tu_sheet:
+        print(f"  Tự đọc lại sheet tổng mỗi config_reload_seconds — KHÔNG cần đổi ô B1", flush=True)
     print(f"  (Ctrl+C để dừng tất cả)", flush=True)
     print("=" * 62, flush=True)
 
     # Giãn giờ khởi động: các tài khoản lệch pha nhau nên không cùng gọi
     # Google Sheets / Binance trong một khoảnh khắc → tránh lỗi 429.
-    # Mặc định 20s; chỉnh bằng account_start_stagger_sec trong [global].
     try:
         stagger = config.getfloat('global', 'account_start_stagger_sec', fallback=20.0)
     except Exception:
@@ -232,10 +245,15 @@ def _run_for_all_accounts(entry_file):
     if stagger < 0:
         stagger = 0.0
 
+    import config_watcher as _cw
     from config_watcher import MA_NAP_LAI, MA_BI_TAT
 
-    procs = {}
-    da_biet = set()     # tài khoản đã mở — để nhận ra tài khoản MỚI thêm trên sheet
+    procs = {}          # tk → Popen (chỉ con CÒN SỐNG)
+    muc_chay = {}       # tk → dòng sheet con đang chạy (lúc mở)
+    lan_mo = {}         # tk → lúc mở gần nhất
+    da_ra_lenh = {}     # tk → (lệnh, lúc gửi) — chờ con thực hiện
+    chet = {}           # tk → dòng sheet lúc con chết vì lỗi (không tự mở lại)
+    bang = dict(_bang_tk) if nap_tu_sheet else {}
 
     def _relay(acc, proc):
         """In màn hình của tiến trình con, gắn tên tài khoản cho dễ theo dõi."""
@@ -246,10 +264,10 @@ def _run_for_all_accounts(entry_file):
             pass
 
     def _mo(acc):
-        # QBOT_SUPERVISED=1 báo cho con biết có điều phối trông. Cấu hình đổi thì
-        # con chỉ THOÁT với mã MA_NAP_LAI để điều phối bật lại — không tự đẻ
-        # tiến trình (tự đẻ thì điều phối mất dấu con; khi điều phối thoát, đường
-        # ống màn hình đứt làm con mới chết theo — đã tái hiện: 3 tiến trình → 0).
+        # Lệnh cũ còn sót trong file không được áp cho tiến trình con MỚI
+        _cw.xoa_lenh(bot, acc)
+        # QBOT_SUPERVISED=1 báo cho con biết có điều phối trông: con KHÔNG tự đọc
+        # sheet, chỉ nhận lệnh; cần nạp lại thì THOÁT mã MA_NAP_LAI để cha bật lại.
         env = dict(os.environ, QBOT_ACCOUNT=acc, QBOT_CONFIG=config_file, QBOT_SUPERVISED='1')
         try:
             p = subprocess.Popen(
@@ -263,30 +281,22 @@ def _run_for_all_accounts(entry_file):
             print(f"  ❌ Không mở được tiến trình cho [{acc}]: {e}", flush=True)
             return False
         procs[acc] = p
-        da_biet.add(acc)
+        muc_chay[acc] = dict(bang.get(acc) or {})
+        lan_mo[acc] = time.time()
+        chet.pop(acc, None)
         threading.Thread(target=_relay, args=(acc, p), daemon=True).start()
         print(f"  ▶ [{acc}] đã khởi động (PID {p.pid})", flush=True)
         return True
-
-    def _doc_lai_danh_sach():
-        """Tài khoản đang Bật trên sheet tổng. Lỗi → None."""
-        if not nap_tu_sheet:
-            return None
-        try:
-            import sheet_config
-            _pb, _bang = sheet_config.nap(bot_id, config_spreadsheet_id)
-            return set(_bang)
-        except Exception as e:
-            print(f"  ⚠️ Không đọc lại được sheet tổng: {e}", flush=True)
-            return None
 
     for i, acc in enumerate(accounts):
         if i > 0 and stagger > 0:
             print(f"  ⏳ Chờ {stagger:.0f}s trước khi khởi động [{acc}] (tránh rate limit)...", flush=True)
             time.sleep(stagger)
         _mo(acc)
+    for tk, ly_do in bo_qua_sheet:
+        _cw._canh_bao(f"[{tk}] bị BỎ QUA, không chạy: {ly_do}")
 
-    if not procs:
+    if not procs and not nap_tu_sheet:
         raise SystemExit("❌ Không khởi động được tài khoản nào.")
 
     # SIGTERM (lệnh `kill`, chính là cái stop_all_bots dùng) mặc định giết tiến
@@ -300,62 +310,91 @@ def _run_for_all_accounts(entry_file):
     except Exception:
         pass
 
-    # Điều phối tự dò ô B1 để mở tài khoản MỚI thêm trên sheet. (Tài khoản cũ
-    # tự lo: đổi thì tự xin nạp lại, bị tắt thì tự dừng.)
-    import config_watcher as _cw
-    _cw.khoi_tao(config_sheet_version)
     try:
-        _chu_ky = config.getint('global', 'config_reload_seconds', fallback=300)
+        _chu_ky = config.getint('global', 'config_reload_seconds', fallback=60)
     except Exception:
-        _chu_ky = 300
+        _chu_ky = 60
+    lan_doc = time.time()
+    doc_ngay = False
+    da_bao_trong = False
 
     try:
         while True:
             time.sleep(2)
-            xin_nap_lai = []
+
+            # 1) Con nào đã thoát, vì sao
             for acc, p in list(procs.items()):
                 rc = p.poll()
                 if rc is None:
+                    lenh = da_ra_lenh.get(acc)
+                    if lenh and time.time() - lenh[1] > _cw.CHO_CON_THUC_HIEN:
+                        print(f"  ⚠️ [{acc}] không thực hiện lệnh '{lenh[0]}' sau "
+                              f"{_cw.CHO_CON_THUC_HIEN:g}s — buộc dừng", flush=True)
+                        try:
+                            p.terminate()
+                        except Exception:
+                            pass
                     continue
                 procs.pop(acc, None)
+                lenh = da_ra_lenh.pop(acc, None)
+                muc = muc_chay.pop(acc, {})
                 if rc == MA_NAP_LAI:
-                    xin_nap_lai.append(acc)
                     print(f"  🔄 [{acc}] nạp lại cấu hình từ sheet tổng", flush=True)
+                    doc_ngay = True
                 elif rc == MA_BI_TAT:
-                    da_biet.discard(acc)
                     print(f"  ⏹ [{acc}] đã TẮT/XOÁ trên sheet — không bật lại", flush=True)
+                elif lenh:
+                    doc_ngay = True         # cha buộc dừng sau khi ra lệnh
                 else:
-                    # Chết vì lỗi khác: KHÔNG tự bật lại (tự động bật lại khi
-                    # chết là quyết định để sau, theo khách).
+                    # Chết vì lỗi khác: KHÔNG tự bật lại — chỉ mở lại khi dòng của
+                    # nó trên sheet đổi (người dùng đã sửa gì đó).
+                    chet[acc] = muc
                     print(f"  ⚠️ [{acc}] đã dừng (mã thoát {rc})", flush=True)
 
-            if xin_nap_lai:
-                ds = _doc_lai_danh_sach()
-                if ds is None:
-                    ds = set(xin_nap_lai) | set(procs)   # đọc lỗi → bật lại đúng con vừa xin
-                for acc in xin_nap_lai:
-                    if acc in ds:
-                        _mo(acc)
+            # 2) Đọc lại bảng → so nội dung → làm theo kế hoạch
+            if nap_tu_sheet and (doc_ngay or time.time() - lan_doc >= _chu_ky):
+                doc_ngay = False
+                lan_doc = time.time()
+                bang_moi = None
+                try:
+                    import sheet_config as _sc
+                    _pb, bang_moi, bo_qua_moi = _sc.nap(bot_id, config_spreadsheet_id)
+                except Exception as e:
+                    if type(e).__name__ == 'LoiDocSheet':
+                        print(f"  ⚠️ Chưa đọc được sheet tổng ({e}) — giữ nguyên, thử lại sau", flush=True)
                     else:
-                        da_biet.discard(acc)
-                        print(f"  ⏹ [{acc}] không còn Bật trên sheet — không bật lại", flush=True)
-                for acc in sorted(ds - da_biet):
-                    print(f"  ➕ [{acc}] tài khoản MỚI trên sheet tổng — khởi động", flush=True)
-                    _mo(acc)
+                        _cw._canh_bao(f"Sheet tổng đang LỖI — giữ nguyên mọi tài khoản đang chạy:\n{e}")
+                if bang_moi is not None:
+                    bang = bang_moi
+                    for viec in _cw.ke_hoach_dieu_phoi(muc_chay, bang, bo_qua_moi,
+                                                        lan_mo, da_ra_lenh, chet):
+                        if viec[0] == 'mo':
+                            tk = viec[1]
+                            if tk in lan_mo:
+                                print(f"  🔁 [{tk}] mở lại với cấu hình mới trên sheet tổng", flush=True)
+                            else:
+                                print(f"  ➕ [{tk}] tài khoản MỚI trên sheet tổng — khởi động", flush=True)
+                            _mo(tk)
+                        elif viec[0] in ('nap_lai', 'tat'):
+                            _, tk, ly_do = viec
+                            _cw.gui_lenh(bot, tk, viec[0], ly_do)
+                            da_ra_lenh[tk] = (viec[0], time.time())
+                            nhan = 'NẠP LẠI' if viec[0] == 'nap_lai' else 'TẮT'
+                            print(f"  📨 [{tk}] ra lệnh {nhan}: {ly_do}", flush=True)
+                        elif viec[0] == 'canh_bao':
+                            _cw._canh_bao(viec[1])
 
-            if nap_tu_sheet:
-                _doi, _moi = _cw.co_thay_doi(bot_id, config_spreadsheet_id, _chu_ky)
-                if _doi:
-                    ds = _doc_lai_danh_sach()
-                    if ds is not None:          # đọc lỗi → giữ phiên bản cũ, lần sau dò lại
-                        _cw.khoi_tao(_moi)
-                        for acc in sorted(ds - da_biet):
-                            print(f"  ➕ [{acc}] tài khoản MỚI trên sheet tổng — khởi động", flush=True)
-                            _mo(acc)
-
+            # 3) Hết con
             if not procs:
-                print("  ℹ️ Tất cả tài khoản đã dừng.", flush=True)
-                break
+                if not nap_tu_sheet:
+                    print("  ℹ️ Tất cả tài khoản đã dừng.", flush=True)
+                    break
+                if not da_bao_trong:
+                    print("  ℹ️ Không còn tài khoản nào chạy — chờ tài khoản được Bật trên sheet tổng.",
+                          flush=True)
+                    da_bao_trong = True
+            else:
+                da_bao_trong = False
     except KeyboardInterrupt:
         print("\n  ⏹ Đang dừng tất cả tài khoản...", flush=True)
     finally:
@@ -455,7 +494,7 @@ if account:
     for _k, _v in config.items(account):
         config.set('global', _k, _v)
     print(f"👤 [CONFIG] Tài khoản: {account} (file: {config_file})", flush=True)
-elif accounts:
+elif accounts or (nap_tu_sheet and _la_file_bot and not CHE_DO_SOAT):
     # ══════════════════════════════════════════════════════════════════════════
     # CHẠY 1 LẦN CHO TẤT CẢ TÀI KHOẢN
     #
@@ -611,7 +650,6 @@ try:
         try:
             import config_watcher as _cw
             _cw.cho_neu_vua_khoi_dong_lai()
-            _cw.khoi_tao(config_sheet_version)
         except Exception as _e:
             print(f"⚠️ config_watcher: {_e}", flush=True)
         acquire_single_instance_lock(_entry[:-3])
@@ -637,7 +675,7 @@ secret_binance = config.get('global', 'secret_binance', fallback='').strip()
 spreadsheet_id = config.get('global', 'spreadsheet_id', fallback='').strip()
 # Chế độ soát có nhiều tài khoản: chưa chọn tài khoản nào nên [global] không có
 # key — kiem_tra_cau_hinh tự soát key của TỪNG tài khoản.
-if not (key_binance and secret_binance and spreadsheet_id) and not (CHE_DO_SOAT and accounts):
+if not (key_binance and secret_binance and spreadsheet_id) and not (CHE_DO_SOAT and (accounts or nap_tu_sheet)):
     raise SystemExit(
         f"❌ Chưa có API key / Google Sheet cho tài khoản '{account_name}'.\n"
         f"   qbot_new lấy thông tin tài khoản từ SHEET TỔNG — khai trong {config_file}:\n"

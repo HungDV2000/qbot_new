@@ -5,7 +5,7 @@
 #   ./stop_bot.sh hd_order_multi         → dừng bot đó ở MỌI tài khoản
 #   ./stop_bot.sh hd_order_multi kh_a    → chỉ tài khoản kh_a
 #
-# Muốn TẮT HẲN một tài khoản: để Bật = N trên sheet tổng rồi đổi ô B1 —
+# Muốn TẮT HẲN một tài khoản: để Bật = N trên sheet tổng (không cần đổi ô B1) —
 # mọi bot tự dừng tài khoản đó, không cần vào máy.
 # ==============================================================================
 cd "$(dirname "$0")" || exit 1
@@ -39,8 +39,8 @@ if [ -n "$ACC" ]; then
     PID="$(cat "pids/$BOT.pid" 2>/dev/null)"
     if [ -n "$PID" ] && kill -0 "$PID" 2>/dev/null; then
         echo "⚠️  $BOT đang chạy dưới điều phối chung (PID $PID). Dừng riêng [$ACC] thì"
-        echo "   điều phối KHÔNG bật lại cho tới lần khởi động sau."
-        echo "   Muốn tắt hẳn tài khoản: Bật = N trên sheet tổng rồi đổi ô B1."
+        echo "   điều phối KHÔNG bật lại cho tới khi dòng đó trên sheet tổng thay đổi."
+        echo "   Muốn tắt hẳn tài khoản: Bật = N trên sheet tổng (không cần đổi ô B1)."
     fi
     FILES=("pids/$ACC/$BOT.pid")
 else

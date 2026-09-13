@@ -12,19 +12,22 @@ SHEET_GIA = '''
 BANG = [
     ["PHIÊN BẢN", "%s"],
     ["Tài khoản", "Bật", "API Key", "API Secret", "Sheet ID", "Chat ID", "Lớp", "%%SL", "%%TP"],
-    ["q2pri", "Y", "KEY_A", "SEC_A", "SHEET_A", "-101", "1", "2", "3"],
-    ["q2pub", "Y", "KEY_B", "SEC_B", "SHEET_B", "-102", "2", "5", "6"],
-    ["q3fu",  "N", "KEY_C", "SEC_C", "SHEET_C", "-103", "3", "10", "10"],
+    ["q2pri", "Y", "KEY_A_" + "x" * 40, "SEC_A_" + "x" * 40, "SHEET_A", "-101", "1", "2", "3"],
+    ["q2pub", "Y", "KEY_B_" + "x" * 40, "SEC_B_" + "x" * 40, "SHEET_B", "-102", "2", "5", "6"],
+    ["q3fu",  "N", "KEY_C_" + "x" * 40, "SEC_C_" + "x" * 40, "SHEET_C", "-103", "3", "10", "10"],
 ]
 class LoiSheetCauHinh(Exception): pass
+def mo_ta_bo_qua(bo_qua):
+    import sheet_config_that as t
+    return t.mo_ta_bo_qua(bo_qua)
 def nap(bot_id, sid):
     if "%s" == "LOI":
         raise LoiSheetCauHinh("mô phỏng sheet lỗi")
     import sheet_config_that as t
-    pb, bang = t.phan_tich_bang(BANG)
-    bang = t.loc_dang_bat(bang); t.kiem_tra_du_khoa(bang)
-    return pb, bang
-def doc_o_phien_ban(sid, tab): return "%s"
+    bang = [list(r) for r in BANG]
+    if "%s" == "CO_DONG_LOI":            # một dòng dán thiếu key giữa các dòng đúng
+        bang.append(["q4bad", "Y", "abc", "SEC_D_" + "x" * 40, "SHEET_D", "-104", "", "2", "3"])
+    return t.nap_tu_bang(bang, bot_id)
 '''
 
 CONFIG = """
@@ -103,7 +106,8 @@ class TestNapTuSheet(unittest.TestCase):
     def test_moi_tai_khoan_lay_dung_key_cua_minh(self):
         out = _chay(self.d, "import cst\nprint('K=' + cst.key_binance + '|S=' + cst.spreadsheet_id)\n",
                     acc="q2pub")
-        self.assertIn("K=KEY_B|S=SHEET_B", out, f"lấy nhầm key:\n{out[:500]}")
+        self.assertIn("K=KEY_B_xxxx", out, f"lấy nhầm key:\n{out[:500]}")
+        self.assertIn("|S=SHEET_B", out)
 
     def test_tham_so_van_hanh_rieng_tung_tai_khoan_co_hieu_luc(self):
         """Mỗi tài khoản một lớp → %SL/%TP khác nhau, KHÔNG bị chặn bởi whitelist."""
@@ -131,6 +135,32 @@ class TestNapTuSheet(unittest.TestCase):
         self.assertIn("Chưa chọn tài khoản", out)
         self.assertIn("Sheet tổng", out, "tài khoản khai ở sheet tổng — đừng báo là config.ini")
         self.assertNotIn("config.ini đang khai", out)
+
+    def test_dong_loi_bi_bo_rieng_cac_dong_khac_van_chay(self):
+        """Máy tự bật Y — một dòng sai không được chặn các tài khoản khác."""
+        d = _hop_cat(phien_ban="CO_DONG_LOI")
+        try:
+            out = _chay(d, "import cst\nprint('TK=' + ','.join(cst.accounts))\n", acc="q2pri")
+            self.assertIn("TK=q2pri,q2pub", out, f"🔴 dòng lỗi chặn cả bảng:\n{out[:600]}")
+            self.assertIn("BỎ QUA", out)
+            self.assertIn("q4bad", out)
+        finally:
+            shutil.rmtree(d, ignore_errors=True)
+
+    def test_kiem_tra_cau_hinh_bao_dong_bi_bo_qua(self):
+        d = _hop_cat(phien_ban="CO_DONG_LOI")
+        try:
+            for f in ("kiem_tra_cau_hinh.py", "giu_cua_so.py"):
+                shutil.copy(QBOT / f, d / f)
+            env = dict(os.environ, QBOT_CONFIG=str(d / "config.ini"), QBOT_GIU_CUA_SO="0")
+            env.pop("QBOT_ACCOUNT", None); env.pop("QBOT_CHE_DO_SOAT", None)
+            r = subprocess.run([sys.executable, "kiem_tra_cau_hinh.py"], cwd=d, env=env,
+                               capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
+            out = r.stdout + r.stderr
+            self.assertIn("❌ [q4bad]", out, out[-800:])
+            self.assertEqual(r.returncode, 1, "có dòng bị bỏ qua thì soát phải báo lỗi")
+        finally:
+            shutil.rmtree(d, ignore_errors=True)
 
     def test_bao_ro_nguon_cau_hinh(self):
         out = _chay(self.d, "import cst\n")

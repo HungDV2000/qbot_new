@@ -17,9 +17,9 @@ danh sách tài khoản, API key và cấu hình từng tài khoản nằm trên
 
 BỐ CỤC SHEET TỔNG — mỗi bot MỘT TAB, tên tab đặt đúng bằng bot_id
 
-    Dòng 1 :  A1 = "PHIÊN BẢN"      B1 = <số bất kỳ>
-              Sửa bất cứ ô nào bên dưới thì ĐỔI Ô B1. Bot chỉ đọc mỗi ô này
-              để biết có gì thay đổi — rẻ, không tốn hạn mức Google.
+    Dòng 1 :  A1 = "PHIÊN BẢN"      B1 = <ghi chú tuỳ ý — KHÔNG cần đổi>
+              Bot tự đọc lại cả bảng mỗi config_reload_seconds và so nội dung
+              từng dòng tài khoản — sửa ô nào là bot tự nhận.
 
     Dòng 2 :  tiêu đề cột (xem bảng nhãn bên dưới)
     Dòng 3+:  mỗi dòng một tài khoản
@@ -196,41 +196,34 @@ def _hieu_bat_tat(gt):
 
 def loc_dang_bat(bang):
     """
-    Bỏ các tài khoản có cột 'Bật' = tắt. Không khai / để trống = coi như bật.
+    Bỏ tài khoản có cột 'Bật' = tắt. Không khai / để trống = coi như bật.
+    → (đang_bật, bỏ_qua) — bỏ_qua là [(tên, lý do)] của dòng có giá trị Bật lạ.
 
-    ⚠️ Trước đây chỉ nhận N/NO/FALSE/0/TẮT là tắt — gõ "Không" (cách người Việt
-    hay gõ) lại bị hiểu là BẬT. Nay hiểu cả tiếng Việt có/không dấu, và giá trị
-    lạ (vd "tạm dừng") thì DỪNG thay vì đoán — đoán sai là bật nhầm tài khoản.
+    Gõ "Không" (cách người Việt hay gõ) là TẮT. Giá trị lạ (vd "tạm dừng") thì
+    bỏ RIÊNG dòng đó + báo, không đoán — đoán sai là bật nhầm tài khoản.
     """
-    ra, la = {}, []
+    ra, bo_qua = {}, []
     for ten, muc in bang.items():
         try:
             bat = _hieu_bat_tat(muc.get('__bat__', ''))
         except ValueError:
-            la.append(f"  • [{ten}] cột Bật = '{muc.get('__bat__')}'")
+            bo_qua.append((ten, f"cột Bật = '{muc.get('__bat__')}' không hiểu được — "
+                                f"chỉ dùng Y / N (hoặc Có / Không)"))
             continue
         if bat is False:
             continue
         ra[ten] = muc
-    if la:
-        raise LoiSheetCauHinh(
-            "Cột 'Bật' có giá trị không hiểu được:\n" + "\n".join(la)
-            + "\n   Chỉ dùng: Y / N (hoặc Có / Không). Để trống = bật.")
-    return ra
+    return ra, bo_qua
 
 
 def kiem_tra_du_khoa(bang):
-    """Mỗi tài khoản BẮT BUỘC có key/secret/sheet — thiếu là dừng, tránh dùng nhầm key."""
+    """Dòng thiếu key/secret/sheet → [(tên, lý do)]. Phải bỏ — tránh dùng nhầm key."""
     loi = []
     for ten, muc in bang.items():
         thieu = [k for k in BAT_BUOC if not muc.get(k)]
         if thieu:
-            loi.append(f"  • [{ten}] thiếu: {', '.join(thieu)}")
-    if loi:
-        raise LoiSheetCauHinh(
-            "Tài khoản thiếu thông tin bắt buộc trên sheet tổng:\n" + "\n".join(loi)
-            + "\n   (Không cho chạy tiếp vì tài khoản thiếu key sẽ dùng nhầm key "
-              "của tài khoản khác.)")
+            loi.append((ten, f"thiếu {', '.join(thieu)}"))
+    return loi
 
 
 KHOA_BAT_TAT = {'allow_dca', 'exit_sl_close_position', 'exit_tp_resize',
@@ -283,12 +276,12 @@ def _chuan_hoa_gia_tri(k, v):
 
 def kiem_tra_du_lieu(bang):
     """
-    Soát dữ liệu từng ô — bắt các lỗi hay gặp khi SỬA DỞ trên sheet:
+    Soát từng ô → [(tên, lý do)] các dòng phải BỎ QUA. Chuẩn hoá tại chỗ ("2,5" → "2.5").
       • API key dán thiếu / dính khoảng trắng
-      • hai tài khoản trùng API key hoặc trùng Sheet ID (chép dòng quên sửa)
-        → hai tiến trình cùng giao dịch MỘT tài khoản = ĐẶT LỆNH TRÙNG
-      • số gõ kiểu Việt "2,5", chữ trong ô số, tên cột sai
-    Chuẩn hoá tại chỗ ("2,5" → "2.5"). Có lỗi → LoiSheetCauHinh, không đoán.
+      • chữ trong ô số, % ngoài khoảng, tên cột sai
+      • hai dòng trùng API key hoặc trùng Sheet ID (chép dòng quên sửa) → bỏ CẢ HAI:
+        không biết dòng nào đúng, mà chạy cả hai = hai tiến trình cùng giao dịch
+        MỘT tài khoản = ĐẶT LỆNH TRÙNG
     """
     loi = []
     for ten, muc in bang.items():
@@ -297,25 +290,34 @@ def kiem_tra_du_lieu(bang):
             co_trang = bool(re.search(r'\s', v))
             if v and (co_trang or len(v) < 16):
                 them = ', có khoảng trắng' if co_trang else ''
-                loi.append(f"  • [{ten}] {k} trông không hợp lệ ({len(v)} ký tự{them}) — dán thiếu?")
+                loi.append((ten, f"{k} trông không hợp lệ ({len(v)} ký tự{them}) — dán thiếu?"))
         for k in list(muc):
             if k.startswith('__') or k in ('key_binance', 'secret_binance'):
                 continue
             try:
                 muc[k] = _chuan_hoa_gia_tri(k, muc[k])
             except ValueError as e:
-                loi.append(f"  • [{ten}] {k} = '{muc[k]}': {e}")
+                loi.append((ten, f"{k} = '{muc[k]}': {e}"))
+
+    hong = {t for t, _ in loi}
     for khoa, nhan in (('key_binance', 'API Key'), ('spreadsheet_id', 'Sheet ID')):
         gom = {}
         for ten, muc in bang.items():
-            if muc.get(khoa):
+            if ten not in hong and muc.get(khoa):
                 gom.setdefault(muc[khoa], []).append(ten)
         for ds in gom.values():
-            if len(ds) > 1:
-                loi.append(f"  • {nhan} DÙNG CHUNG bởi {', '.join(ds)} — hai tiến trình "
-                           f"sẽ cùng giao dịch MỘT tài khoản → ĐẶT LỆNH TRÙNG")
-    if loi:
-        raise LoiSheetCauHinh("Dữ liệu trên sheet tổng không hợp lệ:\n" + "\n".join(loi))
+            if len(ds) < 2:
+                continue
+            goi_y = ""
+            if khoa == 'key_binance' and len({bang[t].get('secret_binance') for t in ds}) > 1:
+                # Mỗi API Key chỉ có ĐÚNG MỘT Secret → key giống mà secret khác = dán nhầm key
+                goi_y = (" (Secret lại KHÁC nhau → gần như chắc chắn DÁN NHẦM Key. Mỗi tài "
+                         "khoản / sub-account có API Key RIÊNG — chép lại cả Key lẫn Secret)")
+            for ten in ds:
+                khac = ", ".join(t for t in ds if t != ten)
+                loi.append((ten, f"{nhan} DÙNG CHUNG với {khac} — hai tiến trình sẽ cùng giao "
+                                 f"dịch MỘT tài khoản → ĐẶT LỆNH TRÙNG{goi_y}"))
+    return loi
 
 
 def tim_tai_khoan(bang, ten):
@@ -452,22 +454,6 @@ def _loi_doc_sheet(sv, spreadsheet_id, tab, e, viec):
     return LoiDocSheet(f"Không {viec}: {e}")
 
 
-def doc_o_phien_ban(spreadsheet_id, tab):
-    """Đọc MỖI ô B1 — dùng để dò thay đổi mà không tốn hạn mức."""
-    sv = None
-    try:
-        sv = _lay_service()
-        r = sv.spreadsheets().values().get(
-            spreadsheetId=spreadsheet_id, range=f"'{tab}'!B1:B1").execute()
-        gt = r.get('values', [[]])
-        return str(gt[0][0]).strip() if gt and gt[0] else ''
-    except LoiSheetCauHinh:
-        raise
-    except Exception as e:
-        raise _loi_doc_sheet(sv, spreadsheet_id, tab, e,
-                             f"đọc được ô phiên bản '{tab}'!B1")
-
-
 def doc_bang_tho(spreadsheet_id, tab):
     """Đọc trọn vùng cấu hình A1:Z200 của tab."""
     sv = None
@@ -484,26 +470,36 @@ def doc_bang_tho(spreadsheet_id, tab):
 
 
 def nap_tu_bang(rows, bot_id=''):
-    """Bảng thô → (phiên_bản, tài khoản đang Bật) đã qua MỌI bước kiểm. Không gọi mạng."""
+    """
+    Bảng thô → (phiên_bản, hợp_lệ, bỏ_qua). Không gọi mạng.
+
+    hợp_lệ : {tên: {tham_số: giá_trị}} — tài khoản đang Bật và qua MỌI bước kiểm.
+    bỏ_qua : [(tên, lý do)] — dòng Bật nhưng có lỗi. Bỏ RIÊNG dòng đó, các dòng
+             khác vẫn chạy: máy tự bật Y thì một dòng sai không được làm đứng cả hệ.
+
+    Lỗi CẤU TRÚC bảng (thiếu cột Tài khoản, trùng tên…) vẫn NÉM LoiSheetCauHinh —
+    khi đó không chắc đọc đúng được dòng nào.
+    """
     phien_ban, bang = phan_tich_bang(rows)
-    bang = loc_dang_bat(bang)
-    if not bang:
-        raise LoiSheetCauHinh(
-            f"Tab '{bot_id}': không tài khoản nào đang Bật (cột 'Bật' đều là N)")
-    kiem_tra_du_khoa(bang)
-    kiem_tra_du_lieu(bang)
-    return phien_ban, bang
+    bang, bo_qua = loc_dang_bat(bang)
+    for kiem in (kiem_tra_du_khoa, kiem_tra_du_lieu):
+        loi = kiem(bang)
+        bo_qua += loi
+        for ten, _ in loi:
+            bang.pop(ten, None)
+    return phien_ban, bang, bo_qua
+
+
+def mo_ta_bo_qua(bo_qua):
+    """[(tên, lý do)] → các dòng chữ để in / gửi Telegram."""
+    return "\n".join(f"  • [{t}] {ly_do}" for t, ly_do in bo_qua)
 
 
 def nap(bot_id, spreadsheet_id):
     """
-    Đọc trọn cấu hình cho một mã bot.
+    Đọc sheet tổng → (phiên_bản, hợp_lệ, bỏ_qua) — xem nap_tu_bang.
 
-    Trả về (phiên_bản, {tên: {tham_số: giá_trị}}) — đã lọc tài khoản tắt, đã
-    kiểm đủ khoá bắt buộc và soát dữ liệu từng ô.
-
-    Lỗi thì NÉM LoiSheetCauHinh (lỗi mạng là LoiDocSheet — lớp con) để bot
-    dừng hẳn lúc khởi động. Theo quyết định của khách: thà không chạy còn hơn
-    chạy bằng cấu hình cũ mà tưởng là mới.
+    Đọc lỗi (mạng, sai tab, thiếu quyền) → NÉM LoiDocSheet / LoiSheetCauHinh:
+    lúc khởi động là bot DỪNG HẲN — không có cấu hình nào đáng tin để chạy.
     """
     return nap_tu_bang(doc_bang_tho(spreadsheet_id, bot_id), bot_id)
