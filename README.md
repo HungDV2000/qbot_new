@@ -109,6 +109,14 @@ bash tests/demo_doi_key.sh             # đổi key trên sheet tổng
 bash tests/demo_order_cu.sh            # hd_order + hd_order_123 kiểu cũ, chặn chạy chung multi
 ```
 
+**Thử đặt lệnh THẬT trên Binance** (tiền thật — tự điền key, mặc định chỉ in kế hoạch):
+
+```bash
+python tests/thu_dat_lenh_that.py      # từng loại lệnh: đặt → kiểm → HUỶ NGAY; log ở logs/thu_dat_lenh_*.txt
+```
+
+⚠️ Đã điền key vào file thì **đừng commit/push** file đó.
+
 | Bộ test | Kiểm cái gì |
 |---|---|
 | `test_hd_order_multi` | Logic đặt lệnh đa kiểu |
