@@ -96,6 +96,10 @@ không hỏi.
 | 5 | `hd_cancel_orders_schedule` | Tuỳ — tự huỷ lệnh vào treo lâu |
 | 6 | `hd_update_all` | Tuỳ — chỉ để xem số dư trên sheet |
 
+**Muốn đặt lệnh KIỂU CŨ** (như qbot_setup) thì ở bước 2 bật cặp **`hd_order` +
+`hd_order_123`** THAY cho `hd_order_multi` — xem mục 3.2b. ⛔ Không bật chung hai kiểu
+cho cùng một tài khoản (bot tự chặn, vì sẽ đặt lệnh trùng).
+
 **Lần đầu nên thử**: để ô **B2 = CHỜ** rồi mới bật `hd_order_multi` — bot chỉ đặt
 SL/TP cho vị thế đang có, **không vào lệnh mới**. Thấy ổn mới đổi B2 sang LONG/SHORT.
 
@@ -166,6 +170,53 @@ SL/TP cho vị thế đang có, **không vào lệnh mới**. Thấy ổn mới 
 **Kiểm tra**: màn hình in `📌 Trạng thái: …` mỗi vòng; lệnh đặt được ghi vào
 `logs/<tài khoản>/order.log` và báo Telegram.
 
+### 3.2b Kiểu CŨ: `hd_order` + `hd_order_123` — thay cho `hd_order_multi`
+
+Cho khách quen cách đặt lệnh của qbot_setup. Chạy **chung bộ máy** với
+`hd_order_multi` (chống trùng, sheet tổng, nhiều tài khoản, giữ cửa sổ khi lỗi).
+
+| Kiểu | Bật | Lệnh vào | SL / TP |
+|---|---|---|---|
+| **MỚI** | `hd_order_multi` | Chọn kiểu theo cột F (1–5) | Cắt lỗ STOP MARKET giá N · chốt lời **LIMIT** giá O |
+| **CŨ** | `hd_order` **+** `hd_order_123` | Luôn **TRAILING** | Cắt lỗ STOP MARKET giá N · chốt lời **TRAILING** kích hoạt giá O |
+
+⛔ Chọn **một** kiểu cho mỗi tài khoản. Bật `hd_order` hoặc `hd_order_123` khi
+`hd_order_multi` đang chạy (hoặc ngược lại) → bot **dừng ngay** và báo *"ĐẶT LỆNH TRÙNG"*.
+`start_all_bots.sh` chỉ bật kiểu mới.
+
+**`hd_order` — lệnh VÀO trailing** (tab ĐẶT LỆNH)
+
+| Ô / cột | Ý nghĩa |
+|---|---|
+| **B2** | Giống `hd_order_multi`: LONG → dòng 4–53 MUA · SHORT → dòng 55–104 BÁN · CHỜ / STOP / XÓA CHỜ / XÓA VỊ THẾ |
+| **A / B** | Mã / đòn bẩy (`N` hoặc `0` = bỏ dòng) |
+| **C** | **Callback %** (1 = 1%) |
+| **D** | **Giá kích hoạt** — MUA phải **thấp hơn** giá hiện tại, BÁN phải **cao hơn**; sai phía thì bỏ qua |
+| **H**, D1/D2/E2 | Vốn — như `hd_order_multi` |
+
+Mỗi mã chỉ **1** lệnh vào: đã có vị thế **hoặc đã có lệnh vào đang chờ** (bất kể giá)
+thì bỏ qua — sửa giá cột D không sinh thêm lệnh thứ hai. Muốn đổi giá: tick **J**
+(xoá lệnh vào) ở tab Chờ và khớp, vòng sau bot đặt lại theo giá mới.
+
+**`hd_order_123` — SL + TP** (tab Chờ và khớp, dòng **D = Y** và **P = Y**)
+
+| Ô / cột | Ý nghĩa |
+|---|---|
+| **N** | Giá **cắt lỗ** → STOP MARKET đóng toàn bộ vị thế. Trống → giá vào ∓ %SL (sheet tổng) |
+| **O** | Giá **kích hoạt chốt lời trailing**. Trống / `0` / `NGAY` → kích hoạt **ngay** |
+| **N1** | **Callback %** của chốt lời trailing (1 = 1%, Binance nhận 0.1–10). Trống → `callback_rate_123` |
+
+Đã có lệnh cắt lỗ / chốt lời trên Binance (bất kể giá, kể cả lệnh LIMIT do kiểu mới
+để lại) thì không đặt thêm. Giá cắt lỗ đã vượt giá hiện tại (sẽ khớp ngay) → bỏ qua.
+`hd_update_cho_va_khop` vẫn điền gợi ý vào N/O như thường — O tự điền là giá kích hoạt.
+
+| Cấu hình | Mặc định | Ý nghĩa |
+|---|---|---|
+| `delay_vao_lenh` | 60 | Nhịp của `hd_order` |
+| `order_callback_col` | C | Cột callback % của `hd_order` |
+| `delay_vao_lenh_123` | = `delay_vao_lenh` | Nhịp của `hd_order_123` |
+| `callback_rate_123` | 1 | Callback % khi ô N1 trống |
+
 ### 3.3 `hd_alert_possition_and_open_order` — cảnh báo
 
 **Nhiệm vụ**: mỗi vòng so danh sách vị thế với lần trước.
@@ -197,7 +248,7 @@ Lần chạy đầu chỉ ghi nhớ, **không báo** (tránh báo tràn mọi v�
 
 Giá trị tick được nhận: ô checkbox (TRUE), `Y`, `X`, `1`, `✓`. N / FALSE / trống = không.
 
-⚠️ Xoá SL/TP (K/M) mà **P = Y** thì `hd_order_multi` sẽ **đặt lại** ở vòng sau.
+⚠️ Xoá SL/TP (K/M) mà **P = Y** thì `hd_order_multi` / `hd_order_123` sẽ **đặt lại** ở vòng sau.
 Muốn bỏ hẳn: đổi P = N trước rồi mới tick.
 
 | Cấu hình | Mặc định |
@@ -258,8 +309,8 @@ Từng dòng mã:
 | **G** | Phụ: kiểu 4 = giá limit · kiểu 5 = callback % |
 | **H** | Mức vốn (USDT). Trống → D1 × E2 (tối thiểu 10) → D2 |
 
-- Kiểu 1 (limit): LONG phải **thấp hơn** giá hiện tại, SHORT phải **cao hơn** — sai
-  thì bot bỏ qua dòng. Kiểu 2 (market) không cần D.
+- Kiểu 1 (limit) và 5 (trailing): LONG phải **thấp hơn** giá hiện tại, SHORT phải
+  **cao hơn** — sai thì bot bỏ qua dòng. Kiểu 2 (market) không cần D.
 - Vốn dưới 10 USDT hoặc giá trị lệnh dưới 5 USDT → bỏ qua.
 - Cột **C** ("Callback (lệnh 5)") và **E** **không được đọc** — callback lấy ở **G**.
   Ô **B1** ("Số mã đạt") bot cũng không đọc.
@@ -291,8 +342,8 @@ Từng dòng mã:
 | N | STOP LIMIT | Giá **cắt lỗ** (stop market, đóng toàn bộ vị thế) | CẮT LỖ |
 | O | TRAILING STOP | Giá **chốt lời** (lệnh limit) | CHỐT LỜI |
 
-Dòng 1 (`E1`, `I1`, các số `0.3 / 0.6 / 1` ở `J1:N1`) **không bot nào đọc** — là
-cấu hình của bot cũ, để hay xoá đều được.
+Dòng 1 (`E1`, `I1`, các số `0.3 / 0.6` ở `J1:M1`) **không bot nào đọc** — là cấu hình
+của bot cũ, để hay xoá đều được. Riêng **`N1`** = callback % khi dùng `hd_order_123`.
 
 ---
 
@@ -305,6 +356,8 @@ cấu hình của bot cũ, để hay xoá đều được.
 | `tab_dat_lenh` | Tên tab ĐẶT LỆNH trên sheet |
 | `state_cache_ttl_sec`, `account_start_stagger_sec` | Chống lỗi 429 — tất cả |
 | `delay_vao_lenh`, `allow_dca`, `exit_*`, `dedup_*`, `leg*`, `multi_leg_count`, `run_tele_command` | `hd_order_multi` |
+| `delay_vao_lenh`, `order_callback_col` | `hd_order` (kiểu cũ) |
+| `delay_vao_lenh_123`, `callback_rate_123`, `default_sl_rate_layer_1` | `hd_order_123` (kiểu cũ) |
 | `delay_cho_va_khop`, `fill_default_cho_va_khop`, `default_sl/tp_rate_layer_1`, `default_allow_order` | `hd_update_cho_va_khop` |
 | `delay_calert_possition_and_open_order` | `hd_alert_possition_and_open_order` |
 | `cancel_selective_seconds` | `hd_cancel_selective` |

@@ -727,6 +727,11 @@ def _get_time_setting(key, minimum=1, warn_below=None, warn_above=None, unit='gi
 
 
 delay_vao_lenh = _get_time_setting('delay_vao_lenh', minimum=1, warn_below=15, warn_above=3600)
+# hd_order_123 (SL/TP kiểu cũ): không khai thì chạy cùng nhịp hd_order
+if config.get('global', 'delay_vao_lenh_123', fallback='').strip():
+    delay_vao_lenh_123 = _get_time_setting('delay_vao_lenh_123', minimum=1, warn_below=15, warn_above=3600)
+else:
+    delay_vao_lenh_123 = delay_vao_lenh
 delay_cho_va_khop = _get_time_setting('delay_cho_va_khop', minimum=1, warn_below=30)
 delay_update_all = _get_time_setting('delay_update_all', minimum=1, warn_below=15)
 delay_calert_possition_and_open_order = _get_time_setting('delay_calert_possition_and_open_order', minimum=1, warn_below=15)

@@ -41,4 +41,8 @@ echo   hd_alert_possition_and_open_order   Canh bao Telegram, don lenh khi vi th
 echo   hd_cancel_selective                 Xoa lenh theo tick J-M
 echo   hd_cancel_orders_schedule           Huy lenh vao treo qua lau
 echo   hd_update_all                       So du -^> tab DAT LENH J1:M2
+echo.
+echo   KIEU CU (thay cho hd_order_multi - KHONG bat chung):
+echo   hd_order                            Lenh vao TRAILING (C = callback, D = gia kich hoat)
+echo   hd_order_123                        SL (gia N) + TP trailing (gia O, callback o N1)
 exit /b 1

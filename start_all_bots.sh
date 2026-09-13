@@ -8,8 +8,10 @@
 #
 #   QBOT_CONFIG=khac.ini ./start_all_bots.sh   → dùng file config khác
 #
-# Bản này chỉ chạy 6 bot cần thiết. Các bot đã nghỉ (hd_update_price,
-# hd_track_30_prices, hd_periodic_report, hd_order_123) KHÔNG có trong thư mục.
+# Bản này chỉ chạy 6 bot cần thiết (đặt lệnh KIỂU MỚI = hd_order_multi). Các bot đã
+# nghỉ (hd_update_price, hd_track_30_prices, hd_periodic_report) KHÔNG có trong thư mục.
+# Kiểu CŨ hd_order + hd_order_123 KHÔNG bật ở đây — bật tay bằng start_bot.sh, và
+# không bao giờ chạy chung với hd_order_multi (đặt lệnh trùng).
 # ==============================================================================
 cd "$(dirname "$0")" || exit 1
 

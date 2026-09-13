@@ -4,6 +4,8 @@ Bot giao dịch Binance Futures điều khiển bằng Google Sheet. Sheet của
 khoản chỉ còn **2 tab**: **ĐẶT LỆNH** và **Chờ và khớp**. Có **6 bot**, bật riêng
 từng cái được.
 
+🟢 **Đặt lệnh thế nào** (ngắn gọn): **[docs/HUONG_DAN_DAT_LENH.md](docs/HUONG_DAN_DAT_LENH.md)**
+
 📘 **Hướng dẫn chi tiết từng bot** (bật/tắt, cấu hình, ô nào đọc/ghi):
 **[docs/HUONG_DAN_TUNG_BOT.md](docs/HUONG_DAN_TUNG_BOT.md)**
 
@@ -37,6 +39,14 @@ Soát cấu hình trước khi bật (không đặt lệnh): `python kiem_tra_ca
 | `hd_cancel_selective.py` | Xoá lệnh theo **tick J–M** tab "Chờ và khớp" | Nếu dùng tick |
 | `hd_cancel_orders_schedule.py` | Huỷ lệnh VÀO treo quá lâu (không đụng SL/TP) | Tuỳ |
 | `hd_update_all.py` | Số dư → tab ĐẶT LỆNH **J1:M2** | Tuỳ |
+
+**Kiểu đặt lệnh CŨ** (như qbot_setup) — bật **cặp này THAY cho `hd_order_multi`**,
+⛔ không bật chung (bot tự chặn). Chi tiết: mục 3.2b của hướng dẫn từng bot.
+
+| Bot | Việc |
+|---|---|
+| `hd_order.py` | Lệnh vào **TRAILING**: C = callback %, D = giá kích hoạt |
+| `hd_order_123.py` | Cắt lỗ STOP MARKET giá N + chốt lời **TRAILING** kích hoạt giá O, callback ô N1 |
 
 ---
 
@@ -96,11 +106,13 @@ bash tests/demo_2_accounts.sh          # diễn tập 2 tài khoản
 bash tests/demo_3_accounts_rate.sh 90  # đo hạn mức Google với 3 tài khoản
 bash tests/demo_sheet_dot_ngot.sh      # sheet tổng bị sửa đột ngột
 bash tests/demo_doi_key.sh             # đổi key trên sheet tổng
+bash tests/demo_order_cu.sh            # hd_order + hd_order_123 kiểu cũ, chặn chạy chung multi
 ```
 
 | Bộ test | Kiểm cái gì |
 |---|---|
 | `test_hd_order_multi` | Logic đặt lệnh đa kiểu |
+| `test_order_cu` | `hd_order` / `hd_order_123` kiểu cũ + chặn chạy chung với `hd_order_multi` |
 | `test_cancel_selective` | Tick J–M: không xoá nhầm SL, xoá đúng dòng khi dòng xê dịch |
 | `test_cot_nguoi_dung` | Cột J–P đi theo mã |
 | `test_sltp_goi_y` | Gợi ý SL/TP vào N/O/P, không đè số người dùng |
@@ -122,7 +134,7 @@ bash tests/demo_doi_key.sh             # đổi key trên sheet tổng
 | `hd_update_price.py`, chế độ `full` của `hd_update_all` | Chỉ phục vụ tab "100 mã" đã xoá |
 | `hd_track_30_prices.py` | Ghi mốc giá mà không bot nào đọc lại |
 | `hd_periodic_report.py` | Chỉ gửi báo cáo Telegram định kỳ |
-| `hd_order_123.py`, `hd_order.py`, `hd_order_limit.py` | Thay bằng `hd_order_multi.py` |
+| `hd_order_limit.py` | Thay bằng `hd_order_multi.py` (`hd_order` / `hd_order_123` nay chạy trên bộ máy của nó) |
 | `cascade_manager.py`, `order_state_tracker.py` | Cơ chế "chuỗi lớp" đời cũ — không nơi nào kích hoạt; nay mỗi tài khoản là 1 lớp |
 | `symbol_filter.py`, `utils.py`, `binance_utils.py`, `notification_manager.py` | Chỉ phục vụ phần đã bỏ ở trên |
 

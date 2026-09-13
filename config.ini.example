@@ -104,3 +104,13 @@ leg3_role = exit
 leg3_source = cho_va_khop
 leg3_type = limit
 leg3_col = O
+
+; ── BOT ĐẶT LỆNH KIỂU CŨ: hd_order + hd_order_123 ─────────────────────────────
+; Dùng THAY cho hd_order_multi — ⛔ KHÔNG bật chung với hd_order_multi (bot tự chặn).
+; hd_order      lệnh VÀO trailing: cột D = giá kích hoạt, cột dưới = callback %
+order_callback_col = C
+; hd_order_123  cắt lỗ STOP MARKET tại giá N · chốt lời TRAILING kích hoạt tại giá O
+;               (O trống / 0 / NGAY → kích hoạt ngay). Callback % lấy ô N1 tab
+;               "Chờ và khớp"; N1 trống thì dùng callback_rate_123 (0.1–10).
+delay_vao_lenh_123 = 60
+callback_rate_123 = 1

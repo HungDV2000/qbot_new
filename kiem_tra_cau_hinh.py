@@ -25,7 +25,8 @@ def in_nhip_chay(cst):
     print("\n" + "─" * 72)
     print("  ⏱️  Nhịp chạy của từng bot (giây)")
     bang = [
-        ("hd_order_multi", "delay_vao_lenh", cst.delay_vao_lenh),
+        ("hd_order_multi / hd_order", "delay_vao_lenh", cst.delay_vao_lenh),
+        ("hd_order_123", "delay_vao_lenh_123", getattr(cst, "delay_vao_lenh_123", cst.delay_vao_lenh)),
         ("hd_update_cho_va_khop", "delay_cho_va_khop", cst.delay_cho_va_khop),
         ("hd_alert_possition...", "delay_calert_possition_and_open_order",
          cst.delay_calert_possition_and_open_order),

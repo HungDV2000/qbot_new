@@ -109,6 +109,19 @@ class TestMoiBotLayNhipTuConfig(unittest.TestCase):
             self.assertIn(khoa, src)
 
 
+class TestNhipHdOrder123(unittest.TestCase):
+    CO_BAN = "cancel_orders_minutes = 60"
+
+    def test_khong_khai_thi_theo_nhip_hd_order(self):
+        self.assertIn("KQ= 60", _hoi_cst(self.CO_BAN, hoi="cst.delay_vao_lenh_123"))
+
+    def test_khai_rieng(self):
+        self.assertIn("KQ= 30", _hoi_cst(self.CO_BAN + "\ndelay_vao_lenh_123 = 30", hoi="cst.delay_vao_lenh_123"))
+
+    def test_khai_sai_thi_dung(self):
+        self.assertIn("không hợp lệ", _hoi_cst(self.CO_BAN + "\ndelay_vao_lenh_123 = 0", hoi="cst.delay_vao_lenh_123"))
+
+
 class TestNghiTheoNhip(unittest.TestCase):
     """Chu kỳ phải ĐÚNG bằng nhịp khai trong config, không phải nhịp + thời gian quét."""
 

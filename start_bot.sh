@@ -12,13 +12,16 @@
 cd "$(dirname "$0")" || exit 1
 
 BOTS=(hd_update_cho_va_khop hd_order_multi hd_alert_possition_and_open_order
-      hd_cancel_selective hd_cancel_orders_schedule hd_update_all)
+      hd_cancel_selective hd_cancel_orders_schedule hd_update_all
+      hd_order hd_order_123)
 MOTA=("Chờ và khớp — nguồn cấp SL/TP (bật TRƯỚC)"
       "Đặt lệnh vào + SL/TP"
       "Cảnh báo Telegram, dọn lệnh khi vị thế đóng"
       "Xoá lệnh theo tick J–M"
       "Huỷ lệnh vào treo quá lâu"
-      "Số dư → tab ĐẶT LỆNH J1:M2")
+      "Số dư → tab ĐẶT LỆNH J1:M2"
+      "KIỂU CŨ: lệnh vào trailing (thay hd_order_multi)"
+      "KIỂU CŨ: SL + TP trailing (đi cặp hd_order)")
 
 danh_sach() {
     echo "Cách dùng: ./start_bot.sh <tên_bot> [tài_khoản]"

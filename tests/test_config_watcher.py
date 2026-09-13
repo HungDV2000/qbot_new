@@ -328,7 +328,7 @@ class TestNoiVaoBot(unittest.TestCase):
         import io
         src = io.open(os.path.join(QBOT, "hd_order_multi.py"), encoding="utf-8").read()
         self.assertIn("config_watcher.ngu", src, "chưa nối bộ dò vào bot")
-        i_quet = src.rindex("do_it()")
+        i_quet = src.rindex("do_it(che_do)")
         i_do = src.index("config_watcher.ngu")
         self.assertLess(i_quet, i_do, "🔴 dò cấu hình phải nằm SAU do_it()")
 

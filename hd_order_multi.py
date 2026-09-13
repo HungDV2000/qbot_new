@@ -10,6 +10,7 @@ from datetime import datetime
 import telegram_factory
 from pathlib import Path
 from binance_order_helper import BinanceOrderHelper
+from phan_loai_lenh import phan_loai
 from googleapiclient.errors import HttpError  # ✅ Thêm import HttpError để handle lỗi Google API
 from binance_futures_direct import fetch_algo_orders_for_symbol, resync_exchange_time
 
@@ -17,7 +18,11 @@ from binance_futures_direct import fetch_algo_orders_for_symbol, resync_exchange
 sys.stdout.reconfigure(line_buffering=True) if hasattr(sys.stdout, 'reconfigure') else None
 sys.stderr.reconfigure(line_buffering=True) if hasattr(sys.stderr, 'reconfigure') else None
 
-file_name = os.path.basename(os.path.abspath(__file__))  
+# hd_order.py / hd_order_123.py chạy chung bộ máy này — log/tiêu đề theo file đã bật
+TEN_BOT = os.path.splitext(os.path.basename(sys.argv[0] if sys.argv else ''))[0]
+if TEN_BOT not in ('hd_order', 'hd_order_123'):
+    TEN_BOT = 'hd_order_multi'
+file_name = TEN_BOT + '.py'
 os.system(f"title {file_name} - {cst.key_name}")
 
 # Tạo thư mục logs/ nếu chưa có
@@ -26,7 +31,7 @@ logs_dir.mkdir(exist_ok=True)
 
 # Tạo tên file log với timestamp: hd_order_limit_dd_mm_yyyy_H_M_S.txt
 log_timestamp = datetime.now().strftime('%d_%m_%Y_%H_%M_%S')
-log_filename = logs_dir / f'hd_order_multi_{log_timestamp}.txt'
+log_filename = logs_dir / f'{TEN_BOT}_{log_timestamp}.txt'
 
 # Cải thiện logging với timestamp và UTF-8 encoding
 logging.basicConfig(
@@ -180,22 +185,29 @@ def is_symbol_tradeable(symbol):
         logger.error(f"Lỗi khi kiểm tra tradeable cho {symbol}: {e}", exc_info=True)
         return False, f"Lỗi kiểm tra: {str(e)}", symbol
 
+def _vi_the(sym):
+    """(positionAmt có dấu, giá vào) của symbol. Raise nếu API lỗi → bỏ qua dòng để tránh trùng."""
+    balance = exchange.fetch_balance()
+    if not balance or 'info' not in balance:
+        raise RuntimeError("fetch_balance trả về dữ liệu không hợp lệ")
+    for position in balance['info'].get('positions', []):
+        if is_same_pair(position.get('symbol', ''), sym):
+            try:
+                gia_vao = float(position.get('entryPrice') or 0)
+            except (TypeError, ValueError):
+                gia_vao = 0.0
+            return float(position.get('positionAmt', '0') or 0), gia_vao
+    return 0.0, 0.0
+
+
 def get_position_amt(sym):
     """
     Trả về positionAmt (signed float) của symbol.
     > 0 = LONG, < 0 = SHORT, 0 = không có vị thế.
     Raise nếu API lỗi → caller sẽ bỏ qua dòng để tránh đặt trùng lệnh.
     """
-    balance = exchange.fetch_balance()
-    if not balance or 'info' not in balance:
-        logger.warning(f"fetch_balance() không hợp lệ cho {sym}")
-        raise RuntimeError("fetch_balance trả về dữ liệu không hợp lệ")
-    positions = balance['info'].get('positions', [])
-    for position in positions:
-        symbol = position.get('symbol', '')
-        if is_same_pair(symbol, sym):
-            return float(position.get('positionAmt', '0') or 0)
-    return 0.0
+    return _vi_the(sym)[0]
+
 
 def is_number(s):
     try:
@@ -547,6 +559,7 @@ def build_symbol_snapshot(symbol, need_algo):
         cp = str(info.get('closePosition', '')).strip().lower() == 'true'
         snap.append({
             'family': _order_type_family(o.get('type', '')),
+            'loai': phan_loai(o),
             'side': str(o.get('side', '')).lower(),
             'reduce_only': bool(ro) or cp,
             'price': price,
@@ -569,7 +582,7 @@ def build_symbol_snapshot(symbol, need_algo):
                     ap = float(ap) if ap not in (None, '') else None
                 except (ValueError, TypeError):
                     ap = None
-                snap.append({'family': 'trailing', 'side': str(a.get('side', '')).lower(),
+                snap.append({'family': 'trailing', 'loai': phan_loai(a, True), 'side': str(a.get('side', '')).lower(),
                              'reduce_only': bool(ro), 'price': ap,
                              'amount': None, 'id': a.get('algoId'), 'close_position': False})
     return snap, algo_ok
@@ -656,6 +669,13 @@ def plan_row(legs, d, pos_amt, snap, algo_ok, capital, last_price, entry_side,
             if side == 'sell' and price <= last_price:
                 skips.append((leg['idx'], 'sell limit <= giá hiện tại')); continue
 
+        if is_entry and lt == 'trailing':
+            # MUA chờ giá GIẢM xuống điểm kích hoạt, BÁN chờ giá TĂNG lên. Sai phía thì
+            # Binance kích hoạt ngay hoặc từ chối — hd_order cũ cũng bỏ qua như vậy.
+            if side == 'buy' and price >= last_price:
+                skips.append((leg['idx'], 'buy trailing: giá kích hoạt >= giá hiện tại')); continue
+            if side == 'sell' and price <= last_price:
+                skips.append((leg['idx'], 'sell trailing: giá kích hoạt <= giá hiện tại')); continue
         if fam == 'trailing' and not algo_ok:
             skips.append((leg['idx'], 'algo API lỗi, bỏ để tránh trùng')); continue
 
@@ -736,7 +756,7 @@ def _place_order(symbol, p, tag="ORDER"):
         return False
 
 
-def scan_cho_va_khop_legs(legs):
+def scan_cho_va_khop_legs(legs, rows=None, lap_ke_hoach=None):
     """
     PHA B — Quét tab "Chờ và khớp" để đặt SL/TP cho các vị thế ĐANG MỞ.
 
@@ -749,10 +769,11 @@ def scan_cho_va_khop_legs(legs):
     Giá/kiểu mỗi leg theo cấu hình legN_col / legN_type_col / legN_aux / legN_pct_col.
     """
     legs = [l for l in legs if l.get('role') == 'exit']
-    if not legs:
+    if not legs and lap_ke_hoach is None:
         return
     try:
-        rows = gg_sheet_factory.get_cho_va_khop("A4:Z1000", value_render_option="UNFORMATTED_VALUE")
+        if rows is None:
+            rows = gg_sheet_factory.get_cho_va_khop("A4:Z1000", value_render_option="UNFORMATTED_VALUE")
     except Exception as e:
         print(f"⚠️ Lỗi đọc tab 'Chờ và khớp': {e}", flush=True)
         logger.error(f"Lỗi đọc tab 'Chờ và khớp': {e}", exc_info=True)
@@ -763,7 +784,8 @@ def scan_cho_va_khop_legs(legs):
 
     print(f"🔁 [SL/TP] Quét tab 'Chờ và khớp': {len(rows)} dòng | {len(legs)} leg exit", flush=True)
     logger.info(f"[SL/TP] Quét Chờ và khớp, legs={[(l['idx'], l['type'], l['type_col']) for l in legs]}")
-    need_algo = any(l.get('type') == 'trailing' or l.get('type_col') is not None for l in legs)
+    need_algo = lap_ke_hoach is not None or any(
+        l.get('type') == 'trailing' or l.get('type_col') is not None for l in legs)
 
     for ri, d in enumerate(rows, start=4):
         try:
@@ -790,7 +812,7 @@ def scan_cho_va_khop_legs(legs):
 
             # Vị thế thực tế + lệnh đang mở (chống trùng)
             try:
-                pos_amt = get_position_amt(symbol)
+                pos_amt, gia_vao = _vi_the(symbol)
                 snap, algo_ok = build_symbol_snapshot(symbol, need_algo)
             except Exception as e:
                 print(f"⚠️  [SL/TP] {symbol}: lỗi đọc vị thế/lệnh: {e} → bỏ qua dòng", flush=True)
@@ -821,11 +843,14 @@ def scan_cho_va_khop_legs(legs):
 
             # capital=None vì leg exit tính khối lượng theo vị thế, không theo vốn
             can_huy = []
-            plans, skips = plan_row(legs, d, pos_amt, snap, algo_ok, None, last_price,
-                                    "buy", round_price=_rp, round_amount=_ra,
-                                    allow_close_position=SL_CLOSE_POSITION,
-                                    resize_exits=TP_RESIZE, resize_tol=RESIZE_TOL,
-                                    cancel_out=can_huy)
+            if lap_ke_hoach is not None:
+                plans, skips = lap_ke_hoach(d, pos_amt, gia_vao, last_price, snap, algo_ok, _rp, _ra)
+            else:
+                plans, skips = plan_row(legs, d, pos_amt, snap, algo_ok, None, last_price,
+                                        "buy", round_price=_rp, round_amount=_ra,
+                                        allow_close_position=SL_CLOSE_POSITION,
+                                        resize_exits=TP_RESIZE, resize_tol=RESIZE_TOL,
+                                        cancel_out=can_huy)
             for leg_idx, reason in skips:
                 logger.info(f"[SL/TP][{symbol}] leg{leg_idx} bỏ qua: {reason}")
 
@@ -853,7 +878,7 @@ def scan_cho_va_khop_legs(legs):
             continue
 
 
-def _do_entry_phase():
+def _do_entry_phase(mot_lenh_vao_moi_ma=False):
   print(f"{datetime.now()}. Scan Vào Lệnh----------------------------------------------------", flush=True)
   sys.stdout.flush()  # Flush ngay sau khi bắt đầu scan
   logger.info(f"{datetime.now()}. Scan Vào Lệnh----------------------------------------------------")
@@ -1076,6 +1101,11 @@ def _do_entry_phase():
                 logger.error(f"{symbol}: lỗi snapshot: {e}", exc_info=True)
                 continue
 
+            # hd_order (kiểu cũ): mã đã có lệnh VÀO đang chờ (bất kể giá) thì thôi —
+            # sửa giá cột D không được sinh thêm lệnh thứ hai (gấp đôi vốn).
+            if mot_lenh_vao_moi_ma and co_lenh_vao_dang_cho(snap):
+                print(f"   ⏭️ {symbol}: đã có lệnh vào đang chờ — bỏ qua", flush=True)
+                continue
             has_pos = (pos_amt != 0)
             exit_side = "sell" if pos_amt > 0 else "buy"
             capital = compute_capital(d, capital_idx, d1_percent, d2_default, e2_total)
@@ -1107,7 +1137,7 @@ def _do_entry_phase():
                     return v
             plans, skips = plan_row(DL_LEGS, d, pos_amt, snap, algo_ok, capital, lastPrice,
                                     entry_side, round_price=_rp, round_amount=_ra,
-                                    allow_dca=ALLOW_DCA,
+                                    allow_dca=ALLOW_DCA and not mot_lenh_vao_moi_ma,
                                     allow_close_position=SL_CLOSE_POSITION)
             for leg_idx, reason in skips:
                 logger.info(f"[{symbol}] leg{leg_idx} bỏ qua: {reason}")
@@ -1133,30 +1163,208 @@ def _do_entry_phase():
     else:
         logger.info(f"[B2 STABLE] Trạng thái B2 không đổi: {state_value}")
 
-def do_it():
+def do_it(che_do='multi'):
     """
-    Điều phối 2 pha mỗi vòng quét:
+    Một vòng quét theo chế độ (xem CHE_DO):
       PHA A — Lệnh VÀO: quét tab "ĐẶT LỆNH" theo trạng thái B2 (LONG/SHORT),
               đồng thời xử lý các lệnh điều khiển STOP / XÓA CHỜ / XÓA VỊ THẾ / CHỜ.
       PHA B — SL/TP:    quét tab "Chờ và khớp" (vị thế thực tế đang mở).
               Bỏ qua khi B2 đang STOP/XÓA (lúc đó hệ thống đang dọn dẹp).
     """
+    cd = CHE_DO[che_do]
     state_value, _ = get_current_state(force=True)
 
-    # PHA A
-    _do_entry_phase()
+    if cd['pha_vao']:
+        _do_entry_phase(mot_lenh_vao_moi_ma=(che_do == 'order'))
 
-    # PHA B — chỉ chạy ở trạng thái vận hành bình thường
-    if state_value in (STATE_LONG, STATE_SHORT, STATE_CHO):
-        cvk_legs = [l for l in LEGS if l.get('source') == 'cho_va_khop']
-        if cvk_legs:
-            try:
-                scan_cho_va_khop_legs(cvk_legs)
-            except Exception as e:
-                print(f"❌ Lỗi pha SL/TP (Chờ và khớp): {e}", flush=True)
-                logger.error(f"Lỗi pha SL/TP: {e}", exc_info=True)
-    else:
+    if not cd['pha_sltp']:
+        return
+    if state_value not in (STATE_LONG, STATE_SHORT, STATE_CHO):
         logger.info(f"[SL/TP] Bỏ qua pha Chờ và khớp (B2={state_value})")
+        return
+    try:
+        if che_do == '123':
+            scan_sltp_123()
+        else:
+            cvk_legs = [l for l in LEGS if l.get('source') == 'cho_va_khop']
+            if cvk_legs:
+                scan_cho_va_khop_legs(cvk_legs)
+    except Exception as e:
+        print(f"❌ Lỗi pha SL/TP (Chờ và khớp): {e}", flush=True)
+        logger.error(f"Lỗi pha SL/TP: {e}", exc_info=True)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# BA CHẾ ĐỘ, CHUNG MỘT BỘ MÁY
+#   multi  hd_order_multi.py  lệnh vào + SL/TP theo cấu hình leg          (kiểu MỚI)
+#   order  hd_order.py        chỉ lệnh VÀO trailing, callback cột C       (kiểu CŨ)
+#   123    hd_order_123.py    chỉ SL/TP: cắt lỗ giá N + trailing giá O    (kiểu CŨ)
+# Kiểu cũ và kiểu mới KHÔNG được chạy chung một tài khoản → đặt lệnh TRÙNG.
+# ═══════════════════════════════════════════════════════════════════════════
+CHE_DO = {
+    'multi': {'bot': 'hd_order_multi', 'pha_vao': True, 'pha_sltp': True,
+              'nhip': 'delay_vao_lenh', 'xung_dot': ('hd_order', 'hd_order_123')},
+    'order': {'bot': 'hd_order', 'pha_vao': True, 'pha_sltp': False,
+              'nhip': 'delay_vao_lenh', 'xung_dot': ('hd_order_multi',)},
+    '123':   {'bot': 'hd_order_123', 'pha_vao': False, 'pha_sltp': True,
+              'nhip': 'delay_vao_lenh_123', 'xung_dot': ('hd_order_multi',)},
+}
+LEGS = []
+
+
+def co_lenh_vao_dang_cho(snap):
+    """Mã đã có lệnh VÀO (không phải SL/TP) đang treo chưa."""
+    return any(not s_['reduce_only'] for s_ in snap)
+
+
+def legs_hd_order():
+    """Lệnh vào kiểu hd_order cũ: luôn TRAILING, D = giá kích hoạt, callback % ở cột
+    `order_callback_col` (mặc định C — đúng bố cục sheet cũ)."""
+    cot = cst.config.get('global', 'order_callback_col', fallback='C').strip() or 'C'
+    aux = _col_to_idx(cot)
+    if aux is None:
+        raise SystemExit(f"❌ order_callback_col = {cot} không phải tên cột (A, B, C…)")
+    return [{'idx': 1, 'type': 'trailing', 'type_col': None, 'role': 'entry',
+             'source': 'dat_lenh', 'col': _col_to_idx('D'), 'aux': aux, 'pct_col': None}]
+
+
+def doc_callback(raw, mac_dinh=1.0):
+    """Callback % của trailing: 1 = 1%. Binance chỉ nhận 0.1–10 → kẹp lại. Trống/sai → mặc định."""
+    s_ = str(raw if raw is not None else '').strip().replace('%', '').replace(',', '.')
+    try:
+        v = float(s_)
+    except ValueError:
+        v = 0.0
+    if v <= 0:
+        v = float(mac_dinh)
+    return min(max(v, 0.1), 10.0)
+
+
+_O_NGAY = frozenset({'', 'NOW', 'NGAY', 'NGAY LẬP TỨC', 'IMMEDIATE', 'MARK', '*'})
+
+
+def _o_la_ngay(raw):
+    """Ô O trống / 0 / NGAY / NOW → chốt lời trailing kích hoạt NGAY (như hd_order_123 cũ)."""
+    s_ = str(raw if raw is not None else '').strip().upper()
+    try:
+        return float(s_.replace(',', '.')) == 0
+    except ValueError:
+        return s_ in _O_NGAY
+
+
+def ke_hoach_123(d, pos_amt, gia_vao, last_price, snap, algo_ok, callback, sl_pct,
+                 round_price=None, round_amount=None):
+    """
+    Thuần logic (KHÔNG gọi API) — SL/TP kiểu hd_order_123 cũ cho 1 dòng "Chờ và khớp".
+      • Cắt lỗ: STOP MARKET tại giá N (N trống → giá vào ∓ %SL). Đã có cắt lỗ (bất kể giá) → thôi.
+      • Chốt lời: TRAILING kích hoạt tại giá O, callback % = ô N1. O trống / 0 / NGAY →
+        kích hoạt ngay quanh giá hiện tại. Đã có chốt lời (trailing hay limit) → thôi.
+    Trả (plans, skips) cùng dạng plan_row.
+    """
+    rp = round_price if round_price else (lambda x: x)
+    ra = round_amount if round_amount else (lambda x: x)
+    if not pos_amt:
+        return [], [(0, 'chưa có vị thế')]
+    la_long = pos_amt > 0
+    side = 'sell' if la_long else 'buy'
+    amount = ra(abs(pos_amt))
+    if amount <= 0:
+        return [], [(0, 'khối lượng = 0')]
+    loai = {s_.get('loai') for s_ in snap}
+    plans, skips = [], []
+
+    if 'SL' in loai:
+        skips.append((2, 'đã có lệnh cắt lỗ'))
+    else:
+        sl = _read_cell_number(d, 13)                      # cột N
+        if sl is None and gia_vao > 0 and sl_pct and sl_pct > 0:
+            sl = gia_vao * (1 - sl_pct / 100.0) if la_long else gia_vao * (1 + sl_pct / 100.0)
+        if sl is None:
+            skips.append((2, 'cột N trống và không tính được từ %SL'))
+        else:
+            sl = rp(sl)
+            if (la_long and sl >= last_price) or (not la_long and sl <= last_price):
+                skips.append((2, f'giá cắt lỗ {sl} đã vượt giá hiện tại {last_price} → sẽ khớp ngay, bỏ'))
+            else:
+                plans.append({'leg_idx': 2, 'type': 'stop_market', 'role': 'exit', 'side': side,
+                              'price': sl, 'aux': None, 'amount': amount, 'reduce_only': True,
+                              'close_position': SL_CLOSE_POSITION})
+
+    if 'TP' in loai:
+        skips.append((3, 'đã có lệnh chốt lời'))
+    elif not algo_ok:
+        skips.append((3, 'algo API lỗi, bỏ để tránh trùng'))
+    else:
+        o_raw = d[14] if len(d) > 14 else None             # cột O
+        if _o_la_ngay(o_raw):
+            kich_hoat = rp(last_price * (0.999 if la_long else 1.001))
+        else:
+            kich_hoat = _read_cell_number(d, 14)
+            kich_hoat = rp(kich_hoat) if kich_hoat is not None else None
+        if kich_hoat is None:
+            skips.append((3, f'cột O = {o_raw!r} không phải giá'))
+        else:
+            plans.append({'leg_idx': 3, 'type': 'trailing', 'role': 'exit', 'side': side,
+                          'price': kich_hoat, 'aux': callback, 'amount': amount,
+                          'reduce_only': True, 'close_position': False})
+    return plans, skips
+
+
+def scan_sltp_123():
+    """PHA SL/TP kiểu hd_order_123. Đọc 1 lượt A1:Z1000 — hàng 1 lấy callback ô N1."""
+    try:
+        bang = gg_sheet_factory.get_cho_va_khop("A1:Z1000", value_render_option="UNFORMATTED_VALUE")
+    except Exception as e:
+        print(f"❌ [123] Không đọc được tab Chờ và khớp: {e}", flush=True)
+        logger.error(f"[123] đọc Chờ và khớp lỗi: {e}", exc_info=True)
+        return
+    if not isinstance(bang, list) or len(bang) < 4:
+        return
+    try:
+        mac_dinh = cst.config.getfloat('global', 'callback_rate_123', fallback=1.0)
+    except (ValueError, TypeError):
+        mac_dinh = 1.0
+    hang1 = bang[0] or []
+    callback = doc_callback(hang1[13] if len(hang1) > 13 else None, mac_dinh)
+    sl_pct = float(getattr(cst, 'default_sl_rate_layer_1', 0) or 0)
+    print(f"🧮 [123] callback = {callback}% (ô N1) · %SL khi N trống = {sl_pct}", flush=True)
+
+    def _lap(d, pos_amt, gia_vao, last_price, snap, algo_ok, rp, ra):
+        return ke_hoach_123(d, pos_amt, gia_vao, last_price, snap, algo_ok, callback, sl_pct, rp, ra)
+
+    scan_cho_va_khop_legs([], rows=bang[3:], lap_ke_hoach=_lap)
+
+
+def kiem_tra_xung_dot(che_do):
+    """Kiểu cũ (hd_order / hd_order_123) và kiểu mới (hd_order_multi) cùng đặt lệnh cho
+    MỘT tài khoản → lệnh TRÙNG, gấp đôi vốn. Thấy bot kia đang chạy thì DỪNG."""
+    cd = CHE_DO[che_do]
+    thu_muc = cst.account_dir('pids')
+
+    def _moc(khoa, pid):
+        """(lúc giành khoá, PID) — để phân xử khi hai bot bật CÙNG LÚC."""
+        try:
+            return (khoa.stat().st_mtime_ns, pid)
+        except OSError:
+            return (float('inf'), pid)       # không có khoá → coi như bật sau cùng
+
+    cua_toi = _moc(thu_muc / f"{cd['bot']}.lock", os.getpid())
+    for ten in cd['xung_dot']:
+        khoa = thu_muc / f'{ten}.lock'
+        try:
+            pid = int(khoa.read_text().strip() or 0)
+        except (OSError, ValueError):
+            continue
+        if pid and pid != os.getpid() and cst._pid_alive(pid):
+            # Bật cùng lúc thì cả hai cùng thấy nhau: chỉ bot giành khoá SAU nhường,
+            # bot bật trước chạy tiếp — không để cả hai cùng chết.
+            if _moc(khoa, pid) > cua_toi:
+                continue
+            raise SystemExit(
+                f"\n⛔ {ten} ĐANG CHẠY cho tài khoản '{cst.account_name}' (PID {pid}).\n"
+                f"   {cd['bot']} và {ten} cùng đặt lệnh cho một tài khoản → ĐẶT LỆNH TRÙNG.\n"
+                f"   Chọn MỘT kiểu:  kiểu CŨ = hd_order + hd_order_123   |   kiểu MỚI = hd_order_multi\n"
+                f"   Tắt {ten} trước rồi bật lại {cd['bot']}.\n")
 
 
 def printf(name, data):
@@ -1205,10 +1413,15 @@ def printf(name, data):
         print(f"⚠️ Lỗi khi lưu order file cho {name}: {e}", flush=True)    
 
 
-if __name__ == "__main__":
-    print(f"🚀 Khởi động bot - Chạy mỗi {cst.delay_vao_lenh} giây", flush=True)
-    logger.info(f"Khởi động bot - Chạy mỗi {cst.delay_vao_lenh} giây")
-    cst.bao_nhip('delay_vao_lenh', cst.delay_vao_lenh)
+def chay(che_do='multi'):
+    """Vòng lặp chính — hd_order_multi.py / hd_order.py / hd_order_123.py đều vào đây."""
+    global LEGS
+    cd = CHE_DO[che_do]
+    nhip = getattr(cst, cd['nhip'], cst.delay_vao_lenh)
+    print(f"🚀 Khởi động {cd['bot']} - Chạy mỗi {nhip} giây", flush=True)
+    logger.info(f"Khởi động {cd['bot']} - Chạy mỗi {nhip} giây")
+    cst.bao_nhip(cd['nhip'], nhip)
+    kiem_tra_xung_dot(che_do)
 
     # ✅ Khởi tạo Google Sheets API trước khi bắt đầu
     print("🔄 Đang khởi tạo Google Sheets API...", flush=True)
@@ -1219,21 +1432,30 @@ if __name__ == "__main__":
         print(f"⚠️ Lỗi khởi tạo Google Sheets API: {e}", flush=True)
         logger.error(f"Lỗi khởi tạo Google Sheets API: {e}", exc_info=True)
 
-    # ✅ Load cấu hình các leg từ config.ini (đọc 1 lần lúc khởi động - đổi config phải restart)
-    LEGS = load_legs()
-    if LEGS:
-        print(f"🧩 Đã nạp {len(LEGS)} leg:", flush=True)
-        for l in LEGS:
-            kind = f"type_col={l['type_col']}" if l['type_col'] is not None else f"type={l['type']}"
-            col_txt = f"col={l['col']}" + (f",aux={l['aux']}" if l['aux'] is not None else "") + (f",pct={l['pct_col']}" if l['pct_col'] is not None else "")
-            print(f"   • leg{l['idx']}: {kind} / {l['role']} ({col_txt})", flush=True)
-        logger.info(f"Đã nạp legs: {LEGS}")
+    if che_do == 'order':
+        LEGS = legs_hd_order()
+        print(f"🧩 hd_order: lệnh VÀO TRAILING — D = giá kích hoạt, cột "
+              f"{cst.config.get('global', 'order_callback_col', fallback='C')} = callback %", flush=True)
+    elif che_do == '123':
+        LEGS = []
+        print("🧩 hd_order_123: cắt lỗ STOP MARKET giá N · chốt lời TRAILING kích hoạt giá O "
+              "(trống/NGAY = ngay), callback % ô N1", flush=True)
     else:
-        print("⚠️ Chưa cấu hình leg nào trong config.ini (multi_leg_count / legN_*)! Bot sẽ không đặt lệnh.", flush=True)
-        logger.warning("Không có leg nào được cấu hình")
+        # ✅ Load cấu hình các leg từ config.ini (đọc 1 lần lúc khởi động - đổi config phải restart)
+        LEGS = load_legs()
+        if LEGS:
+            print(f"🧩 Đã nạp {len(LEGS)} leg:", flush=True)
+            for l in LEGS:
+                kind = f"type_col={l['type_col']}" if l['type_col'] is not None else f"type={l['type']}"
+                col_txt = f"col={l['col']}" + (f",aux={l['aux']}" if l['aux'] is not None else "") + (f",pct={l['pct_col']}" if l['pct_col'] is not None else "")
+                print(f"   • leg{l['idx']}: {kind} / {l['role']} ({col_txt})", flush=True)
+            logger.info(f"Đã nạp legs: {LEGS}")
+        else:
+            print("⚠️ Chưa cấu hình leg nào trong config.ini (multi_leg_count / legN_*)! Bot sẽ không đặt lệnh.", flush=True)
+            logger.warning("Không có leg nào được cấu hình")
 
     # ✅ Khởi động Telegram Command Bot (chỉ khi run_tele_command = true; mặc định false nếu chưa cấu hình)
-    if getattr(cst, 'run_tele_command', False):
+    if che_do != '123' and getattr(cst, 'run_tele_command', False):
         try:
             import tele_command
             tele_command.start_tele_command_thread()
@@ -1250,8 +1472,8 @@ if __name__ == "__main__":
         _t0_vong = config_watcher.bat_dau_vong()
         try:
             resync_exchange_time(exchange)  # [Fix1] chống clock drift -> hết -1021
-            do_it()
-            print(f"⏳ Chờ {cst.delay_vao_lenh} giây trước lần scan tiếp theo...", flush=True)
+            do_it(che_do)
+            print(f"⏳ Chờ {nhip} giây trước lần scan tiếp theo...", flush=True)
             sys.stdout.flush()  # Đảm bảo flush trước khi sleep
 
         except Exception as e:
@@ -1261,10 +1483,14 @@ if __name__ == "__main__":
             logger.error(f"Tổng lỗi: {e}", exc_info=True)
             import traceback
             traceback.print_exc()
-            print(f"⏳ Chờ {cst.delay_vao_lenh} giây trước khi thử lại...", flush=True)
+            print(f"⏳ Chờ {nhip} giây trước khi thử lại...", flush=True)
             sys.stdout.flush()
 
         # Nghỉ tới vòng sau — TRONG LÚC NGHỈ dò cấu hình trên sheet tổng, đổi thì
         # xác minh rồi nạp lại. Đặt SAU khi quét xong: không bao giờ cắt ngang
         # lúc vừa vào lệnh mà chưa kịp đặt cắt lỗ.
-        config_watcher.ngu_theo_nhip(_t0_vong, cst.delay_vao_lenh, 'delay_vao_lenh')
+        config_watcher.ngu_theo_nhip(_t0_vong, nhip, cd['nhip'])
+
+
+if __name__ == "__main__":
+    chay('multi')

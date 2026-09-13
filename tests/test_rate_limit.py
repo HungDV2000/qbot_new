@@ -116,8 +116,9 @@ class TestTongTai(unittest.TestCase):
 class TestMoiBotDeuDuocVa(unittest.TestCase):
     """Đại ca yêu cầu TẤT CẢ bot phải chuẩn — không bot nào còn đọc B2 mỗi dòng."""
 
-    BOTS = ['hd_order.py', 'hd_order_limit.py',
-            'hd_order_market_price.py', 'hd_order_multi.py']
+    # hd_order.py / hd_order_123.py của qbot_new chỉ là file khởi động, chạy chung
+    # bộ máy (và cache B2) của hd_order_multi.py — không có mã riêng để soát.
+    BOTS = ['hd_order_limit.py', 'hd_order_market_price.py', 'hd_order_multi.py']
 
     def _src(self, f):
         return io.open(f, encoding='utf-8').read()
