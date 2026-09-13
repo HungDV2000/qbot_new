@@ -190,6 +190,70 @@ def test_snapshot_gan_loai_lenh():
 
 
 # ════════════════════════════════════════════════════════════════════════════
+#  Lệnh điều kiện nằm ở ALGO API — phản hồi THẬT lấy từ lần đặt lệnh ARBUSDT
+# ════════════════════════════════════════════════════════════════════════════
+ALGO_STOP_MARKET = {'algoId': 2000001430913058, 'algoType': 'CONDITIONAL', 'orderType': 'STOP_MARKET',
+                    'symbol': 'ARBUSDT', 'side': 'BUY', 'positionSide': 'BOTH', 'quantity': '41.0',
+                    'algoStatus': 'NEW', 'triggerPrice': '0.148120', 'price': '0.000000',
+                    'closePosition': False, 'reduceOnly': False}
+ALGO_STOP_LIMIT = dict(ALGO_STOP_MARKET, algoId=2000001430913196, orderType='STOP', price='0.148420')
+ALGO_TRAILING = {'algoId': 2000001430913236, 'algoType': 'CONDITIONAL', 'orderType': 'TRAILING_STOP_MARKET',
+                 'symbol': 'ARBUSDT', 'side': 'BUY', 'quantity': '41.0', 'algoStatus': 'NEW',
+                 'triggerPrice': '0.00', 'closePosition': False, 'reduceOnly': False,
+                 'activatePrice': '0.134020', 'callbackRate': '1.00'}
+ALGO_SL_CLOSE = dict(ALGO_STOP_MARKET, algoId=9, side='SELL', quantity='0', triggerPrice='0.13',
+                     closePosition=True)
+
+
+def _snap_algo(*algo):
+    with mock.patch.object(M.exchange, 'fetch_open_orders', lambda s: [], create=True), \
+         mock.patch.object(M, 'get_algo_orders_for_symbol', lambda s: list(algo)):
+        return M.build_symbol_snapshot('ARB/USDT:USDT', True)[0]
+
+
+def test_algo_stop_nhan_dung_nhom_va_gia_kich_hoat():
+    sm, sl, tr = _snap_algo(ALGO_STOP_MARKET, ALGO_STOP_LIMIT, ALGO_TRAILING)
+    assert (sm['family'], sm['price'], sm['amount'], sm['loai']) == ('stop', 0.14812, 41.0, 'ENTRY')
+    assert (sl['family'], sl['price']) == ('stop', 0.14812)
+    assert (tr['family'], tr['price']) == ('trailing', 0.13402)
+
+
+def test_algo_cat_lo_closePosition_nhan_dung():
+    (x,) = _snap_algo(ALGO_SL_CLOSE)
+    assert x['family'] == 'stop' and x['close_position'] and x['reduce_only'] and x['loai'] == 'SL'
+
+
+def test_lenh_vao_STOP_dang_cho_KHONG_dat_them():
+    """🔴 Lỗi thật: lệnh vào kiểu 3/4 nằm ở Algo bị coi là 'trailing' → vòng nào cũng đặt thêm."""
+    for loai_so, algo in (('3', ALGO_STOP_MARKET), ('4', ALGO_STOP_LIMIT)):
+        legs = [{'idx': 1, 'type': None, 'type_col': 5, 'role': 'entry', 'col': 3, 'aux': 6, 'pct_col': None}]
+        d = ['ARB/USDT', '20', '', '0.14812', '', loai_so, '0.14842', '5.5']
+        plans, skips = M.plan_row(legs, d, 0, _snap_algo(algo), True, 5.5, 0.14107, 'buy')
+        assert plans == [], (loai_so, plans)
+        assert any('tương tự' in r for _, r in skips), skips
+
+
+def test_cat_lo_closePosition_o_Algo_KHONG_dat_them():
+    legs = [{'idx': 2, 'type': 'stop_market', 'type_col': None, 'role': 'exit', 'col': 13, 'aux': None, 'pct_col': None}]
+    d = ['ARB/USDT', 'LONG', 'N', 'Y', 0.141, 20, 'N', 'N', 0, '', '', '', '', 0.13, 0.15, 'Y']
+    plans, _ = M.plan_row(legs, d, 41, _snap_algo(ALGO_SL_CLOSE), True, None, 0.141, 'buy',
+                          allow_close_position=True)
+    assert plans == []
+
+
+def test_khong_doc_duoc_algo_thi_bo_ca_leg_stop():
+    legs = [{'idx': 2, 'type': 'stop_market', 'type_col': None, 'role': 'exit', 'col': 13, 'aux': None, 'pct_col': None}]
+    d = ['ARB/USDT', 'LONG', 'N', 'Y', 0.141, 20, 'N', 'N', 0, '', '', '', '', 0.13, 0.15, 'Y']
+    plans, skips = M.plan_row(legs, d, 41, [], False, None, 0.141, 'buy', allow_close_position=True)
+    assert plans == [] and any('algo' in r.lower() for _, r in skips)
+
+
+def test_ca_hai_pha_deu_doc_algo():
+    src = io.open(os.path.join(QBOT, 'hd_order_multi.py'), encoding='utf-8').read()
+    assert src.count('need_algo = True') == 2
+
+
+# ════════════════════════════════════════════════════════════════════════════
 #  Chống trộn kiểu cũ và kiểu mới trên cùng một tài khoản
 # ════════════════════════════════════════════════════════════════════════════
 def _khoa(ten, pid):

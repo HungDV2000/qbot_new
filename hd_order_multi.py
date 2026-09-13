@@ -581,15 +581,29 @@ def build_symbol_snapshot(symbol, need_algo):
             for a in algo:
                 if str(a.get('algoStatus', '')).upper() != 'NEW':
                     continue
+                # Binance nay đưa MỌI lệnh điều kiện (STOP, STOP_MARKET, TRAILING…) sang
+                # Algo API. Trước đây coi mọi lệnh algo là 'trailing' + chỉ lấy
+                # activatePrice → lệnh vào stop (kiểu 3/4) và cắt lỗ không bao giờ khớp
+                # khi chống trùng → vòng nào cũng đặt THÊM lệnh (đã thấy khi đặt lệnh thật).
+                kieu_lenh = str(a.get('orderType') or a.get('type') or '').upper()
+                fam = _order_type_family(kieu_lenh) if kieu_lenh else 'trailing'
                 ro = a.get('reduceOnly', False) or str(a.get('reduceOnly', 'false')).lower() == 'true'
-                ap = a.get('activatePrice') or a.get('activationPrice')
+                cp = str(a.get('closePosition', '')).strip().lower() == 'true'
+                if fam == 'trailing':
+                    ap = a.get('activatePrice') or a.get('activationPrice')
+                else:
+                    ap = a.get('triggerPrice') or a.get('stopPrice')
                 try:
-                    ap = float(ap) if ap not in (None, '') else None
+                    ap = float(ap) if ap not in (None, '') and float(ap) > 0 else None
                 except (ValueError, TypeError):
                     ap = None
-                snap.append({'family': 'trailing', 'loai': phan_loai(a, True), 'side': str(a.get('side', '')).lower(),
-                             'reduce_only': bool(ro), 'price': ap,
-                             'amount': None, 'id': a.get('algoId'), 'close_position': False})
+                try:
+                    kl = float(a.get('quantity')) if a.get('quantity') not in (None, '') else None
+                except (ValueError, TypeError):
+                    kl = None
+                snap.append({'family': fam, 'loai': phan_loai(a, True), 'side': str(a.get('side', '')).lower(),
+                             'reduce_only': bool(ro) or cp, 'price': ap,
+                             'amount': kl or None, 'id': a.get('algoId'), 'close_position': cp})
     return snap, algo_ok
 
 # Dung sai coi 2 lệnh là "cùng một giá" khi chống trùng.
@@ -681,7 +695,8 @@ def plan_row(legs, d, pos_amt, snap, algo_ok, capital, last_price, entry_side,
                 skips.append((leg['idx'], 'buy trailing: giá kích hoạt >= giá hiện tại')); continue
             if side == 'sell' and price <= last_price:
                 skips.append((leg['idx'], 'sell trailing: giá kích hoạt <= giá hiện tại')); continue
-        if fam == 'trailing' and not algo_ok:
+        if fam in ('trailing', 'stop') and not algo_ok:
+            # không đọc được Algo API thì không biết đã có lệnh điều kiện chưa → bỏ để tránh trùng
             skips.append((leg['idx'], 'algo API lỗi, bỏ để tránh trùng')); continue
 
         # SL kiểu stop_market: dùng closePosition → luôn đóng trọn vị thế,
@@ -789,8 +804,7 @@ def scan_cho_va_khop_legs(legs, rows=None, lap_ke_hoach=None):
 
     print(f"🔁 [SL/TP] Quét tab 'Chờ và khớp': {len(rows)} dòng | {len(legs)} leg exit", flush=True)
     logger.info(f"[SL/TP] Quét Chờ và khớp, legs={[(l['idx'], l['type'], l['type_col']) for l in legs]}")
-    need_algo = lap_ke_hoach is not None or any(
-        l.get('type') == 'trailing' or l.get('type_col') is not None for l in legs)
+    need_algo = True   # lệnh điều kiện (cắt lỗ stop, trailing) nay nằm ở Algo API
 
     for ri, d in enumerate(rows, start=4):
         try:
@@ -1055,7 +1069,7 @@ def _do_entry_phase(mot_lenh_vao_moi_ma=False):
 
     entry_side = "sell" if type in ("SELL", "SHORT") else "buy"
     # Cần đọc algo orders nếu bất kỳ leg nào CÓ THỂ là trailing (cố định hoặc chọn theo dòng)
-    need_algo = any(l.get('type') == 'trailing' or l.get('type_col') is not None for l in DL_LEGS)
+    need_algo = True   # lệnh điều kiện (stop, stop limit, trailing) nay nằm ở Algo API
 
     don_bay = gg_sheet_factory.get_dat_lenh(f"A{start_row}:Z{end_row}")
     print(f"🔍 Scan {state_value} hàng {start_row}-{end_row} | {len(DL_LEGS)} leg (tab ĐẶT LỆNH)", flush=True)
