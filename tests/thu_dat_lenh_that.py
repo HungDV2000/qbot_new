@@ -14,8 +14,13 @@ Cách chạy:
            python tests/thu_dat_lenh_that.py
     3. Xem kết quả cuối màn hình, chi tiết trong logs/thu_dat_lenh_<ngày_giờ>.txt
 
-Đặt lệnh bằng CHÍNH hàm của bot (binance_order_helper) → lệnh nào lỗi ở đây thì
-bot thật cũng sẽ lỗi y như vậy.
+Đặt lệnh VÀ huỷ lệnh bằng CHÍNH hàm của bot → lệnh nào lỗi ở đây thì bot thật
+cũng sẽ lỗi y như vậy:
+  • đặt : binance_order_helper (hd_order_multi / hd_order / hd_order_123)
+  • huỷ : cancel_all_open_orders_with_retry (hd_alert dọn lệnh khi đóng vị thế)
+          cancel_algo_orders — lệnh điều kiện (STOP / XÓA CHỜ / hd_alert)
+  Kiểm "đã hết lệnh" bằng REST riêng — không tin chính hàm vừa huỷ.
+  Hai hàm huỷ của bot xoá MỌI lệnh của mã → mã thử phải KHÔNG có lệnh nào sẵn.
 """
 import os
 import sys
@@ -29,9 +34,9 @@ import giu_cua_so  # noqa: E402  Windows: dừng/lỗi thì giữ cửa sổ đ�
 API_KEY = ""
 API_SECRET = ""
 
-MA = "DOGEUSDT"          # mã thử (DOGEUSDT, DOGE/USDT, DOGE… đều được)
-DON_BAY = 5              # đòn bẩy đặt cho mã thử
-VON_USDT = 7             # giá trị MỖI lệnh (USDT). Binance tối thiểu 5 (có mã 20 / 100)
+MA = "ARBUSDT"           # mã thử (DOGEUSDT, DOGE/USDT, DOGE… đều được). ARB: bước khối lượng rất mịn
+DON_BAY = 20             # đòn bẩy đặt cho mã thử → lệnh 5.5 USDT chỉ giữ ~0.28 USDT ký quỹ
+VON_USDT = 5.5           # giá trị MỖI lệnh (USDT). Binance tối thiểu 5 (có mã 20 / 100)
 CHIEU = "buy"            # buy = thử phía LONG · sell = thử phía SHORT
 CACH_GIA_PCT = 5         # lệnh chờ đặt cách giá hiện tại ngần này % → KHÔNG khớp
 CALLBACK_PCT = 1         # callback % cho lệnh trailing (0.1 – 10)
@@ -64,7 +69,15 @@ from pathlib import Path  # noqa: E402
 import ccxt  # noqa: E402
 import requests  # noqa: E402
 
-from binance_order_helper import BinanceOrderHelper  # noqa: E402
+from binance_order_helper import BinanceOrderHelper, cancel_all_open_orders_with_retry  # noqa: E402
+
+# binance_futures_direct của bot lấy key từ cst — chạy độc lập nên dựng cst tối thiểu
+import types  # noqa: E402
+if "cst" not in sys.modules:
+    _cst = types.ModuleType("cst")
+    _cst.key_binance, _cst.secret_binance = API_KEY, API_SECRET
+    sys.modules["cst"] = _cst
+from binance_futures_direct import cancel_algo_orders  # noqa: E402
 
 FAPI = "https://fapi.binance.com"
 GOC = Path(__file__).resolve().parent.parent
@@ -171,10 +184,12 @@ def tim_tren_san(la_algo, id_):
 
 
 def huy(la_algo, id_):
+    """Huỷ bằng ĐÚNG hàm của bot. Mã thử đã kiểm là không có lệnh nào khác lúc bắt đầu."""
     if la_algo:
-        khoa = "algoId" if str(id_).isdigit() else "clientAlgoId"
-        return goi("DELETE", "/fapi/v1/algoOrder", {"symbol": ma_api, khoa: id_})
-    return goi("DELETE", "/fapi/v1/order", {"symbol": ma_api, "orderId": id_})
+        da_huy, loi = cancel_algo_orders(symbol)
+        return f"cancel_algo_orders({ma_api}) → đã huỷ {da_huy}, lỗi {loi}"
+    sach, con = cancel_all_open_orders_with_retry(exchange, symbol, max_retries=2, delay=1)
+    return f"cancel_all_open_orders_with_retry({ma_api}) → sạch={sach}, còn={con}"
 
 
 def nhan_dien(od):
@@ -293,6 +308,12 @@ def chay():
         if hai_chieu:
             raise SystemExit("❌ Tài khoản đang ở chế độ HAI CHIỀU (Hedge) — bot dùng MỘT CHIỀU. "
                              "Đổi trong app Binance: Futures → ⚙ → Chế độ vị thế → Một chiều")
+        thuong_co = goi("GET", "/fapi/v1/openOrders", {"symbol": ma_api})
+        algo_co = ds_algo(goi("GET", "/fapi/v1/openAlgoOrders", {"symbol": ma_api}))
+        if thuong_co or algo_co:
+            raise SystemExit(f"❌ {ma_api} đang có {len(thuong_co)} lệnh thường + {len(algo_co)} lệnh điều kiện. "
+                             "Bước huỷ dùng hàm của bot (xoá MỌI lệnh của mã) → chọn mã khác, "
+                             "hoặc huỷ các lệnh đó trên app trước")
         co_san = vi_the_hien_tai()
         ghi(f"Vị thế đang có của {ma_api}: {co_san:+g}")
         if co_san and (THU["market"] or THU["lenh_thoat"]):

@@ -17,6 +17,15 @@ thiếu nó thì không có cắt lỗ.
 | Kiểu MỚI | `chay_bot.bat hd_order_multi` | `./start_bot.sh hd_order_multi` |
 | Hoặc kiểu CŨ | `chay_bot.bat hd_order` + `chay_bot.bat hd_order_123` | `./start_bot.sh hd_order` + `./start_bot.sh hd_order_123` |
 
+**Bot phụ** (bật cùng cách, thay tên bot):
+
+| Bot | Cần khi |
+|---|---|
+| `hd_cancel_selective` | Muốn **xoá lệnh bằng tick J–M**. Không bật thì tick **không có tác dụng** |
+| `hd_alert_possition_and_open_order` | **Nên bật**: báo Telegram mở/đóng vị thế + dọn lệnh sót khi vị thế đóng |
+| `hd_cancel_orders_schedule` | Tuỳ: tự huỷ **lệnh VÀO** treo quá `cancel_order_after_minutes` (mặc định **30 phút**), không đụng SL/TP. ⚠️ Đặt limit chờ lâu thì tăng số này hoặc đừng bật |
+| `hd_update_all` | Tuỳ: ghi số dư vào tab ĐẶT LỆNH `J1:M2` |
+
 ---
 
 ## 2. Tab ĐẶT LỆNH — lệnh vào
@@ -42,6 +51,7 @@ không có E2 thì lấy `D2`. ⚠️ **Tối thiểu 10 USDT** — dưới 10 b
 |---|---|---|
 | 1 limit · 5 trailing | **Thấp hơn** giá hiện tại | **Cao hơn** giá hiện tại |
 | 3 stop market · 4 stop limit | **Cao hơn** giá hiện tại | **Thấp hơn** giá hiện tại |
+| Cột G của kiểu 4 (giá limit) | **Bằng hoặc cao hơn** D (không thì dễ không khớp) | **Bằng hoặc thấp hơn** D |
 
 **Mỗi mã chỉ vào 1 lần** (đã có vị thế thì thôi).
 
@@ -85,8 +95,17 @@ Lệnh vào khớp xong, `hd_update_cho_va_khop` ghi mã vào tab này với **D
 ⏱️ Từ lúc khớp đến lúc có SL/TP có thể chậm tới `delay_cho_va_khop` (mặc định 600
 giây). Muốn nhanh hơn thì giảm số này trong `config.ini` rồi bật lại bot.
 
-**Xoá lệnh:** tick **J** để xoá lệnh vào, **K** để xoá SL/TP, **M** để xoá mọi lệnh của
-mã. Muốn bỏ hẳn SL/TP thì đổi **P = N** trước, nếu không vòng sau bot đặt lại.
+**Xoá lệnh** (phải bật `hd_cancel_selective`; bot tự bỏ tick sau khi xoá):
+
+| Tick | Xoá |
+|---|---|
+| **J** | Lệnh **vào** còn treo — không đụng SL/TP |
+| **K** | Cả cắt lỗ và chốt lời (giữ lệnh vào) |
+| **L** | Lệnh sót **một** phía (chỉ còn SL hoặc chỉ còn TP) |
+| **M** | **Mọi** lệnh của mã — dùng khi D = ĐÓNG |
+
+Tick = ô checkbox, hoặc gõ `Y` / `X` / `1`. Muốn bỏ hẳn SL/TP thì đổi **P = N** trước,
+nếu không vòng sau bot đặt lại.
 
 ---
 

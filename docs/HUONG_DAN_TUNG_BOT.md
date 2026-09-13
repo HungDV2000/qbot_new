@@ -143,8 +143,8 @@ SL/TP cho vị thế đang có, **không vào lệnh mới**. Thấy ổn mới 
   | `LONG` | Quét dòng **4–53**, đặt lệnh MUA |
   | `SHORT` | Quét dòng **55–104**, đặt lệnh BÁN |
   | `CHỜ` | Không vào lệnh mới (vẫn đặt SL/TP) |
-  | `STOP` | ⚠️ **Đóng TẤT CẢ vị thế** bằng lệnh thị trường + **huỷ TẤT CẢ lệnh** |
-  | `XÓA CHỜ` | ⚠️ Huỷ **tất cả** lệnh chờ (kể cả SL/TP), giữ vị thế |
+  | `STOP` | ⚠️ **Đóng TẤT CẢ vị thế** bằng lệnh thị trường + **huỷ TẤT CẢ lệnh** — kể cả lệnh điều kiện (stop, trailing, cắt lỗ) |
+  | `XÓA CHỜ` | ⚠️ Huỷ **tất cả** lệnh chờ (kể cả SL/TP, stop, trailing), giữ vị thế |
   | `XÓA VỊ THẾ` | ⚠️ Đóng **tất cả** vị thế bằng lệnh thị trường, giữ lệnh chờ |
 
   ⚠️ `STOP` / `XÓA …` **lặp lại mỗi vòng** chừng nào B2 còn giữ giá trị đó, và trong
@@ -311,6 +311,9 @@ Từng dòng mã:
 
 - Kiểu 1 (limit) và 5 (trailing): LONG phải **thấp hơn** giá hiện tại, SHORT phải
   **cao hơn** — sai thì bot bỏ qua dòng. Kiểu 2 (market) không cần D.
+- Kiểu 3 (stop market) và 4 (stop limit): ngược lại — LONG giá kích hoạt **cao hơn**
+  giá hiện tại, SHORT **thấp hơn**; sai phía Binance từ chối. Kiểu 4: G (giá limit)
+  LONG ≥ D, SHORT ≤ D.
 - Vốn dưới 10 USDT hoặc giá trị lệnh dưới 5 USDT → bỏ qua.
 - Cột **C** ("Callback (lệnh 5)") và **E** **không được đọc** — callback lấy ở **G**.
   Ô **B1** ("Số mã đạt") bot cũng không đọc.
