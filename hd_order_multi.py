@@ -216,7 +216,16 @@ def get_position_amt(sym):
 
 def _so_viet(v):
     """float() nhưng chấp nhận dấu phẩy kiểu Việt: '13,467' -> 13.467.
-    ⚠️ Không dùng cho số có cả dấu . và , (kiểu 1.234,56) — sheet chỉ dùng 1 kiểu."""
+
+    Phòng tuyến THỨ HAI. Tuyến chính là đọc sheet bằng value_render_option=
+    'UNFORMATTED_VALUE' (get_dat_lenh / get_cho_va_khop) — Google tự trả số
+    THẬT bên dưới ô, không qua chuỗi hiển thị nên không còn dấu . / , ngăn
+    cách hàng nghìn/thập phân để đoán. _so_viet chỉ còn cần khi ô đó là ô
+    VĂN BẢN thật sự (Plain text) — trường hợp hiếm, và v ở đây thường đã là
+    số (int/float) sẵn từ Sheets, không phải chuỗi.
+    ⚠️ Không dùng cho số có cả dấu . và , (kiểu 1.234,56) — hiếm gặp trong
+    ô văn bản của sheet này; nếu gặp sẽ báo lỗi rõ (ValueError) chứ không
+    đoán liều — dòng đó bị bỏ qua, không đặt lệnh với số sai."""
     return float(str(v).strip().replace(',', '.'))
 
 
@@ -322,7 +331,9 @@ def get_capital_config():
   """
   try:
     # Đọc D1:E2 (2 dòng x 2 cột)
-    result = gg_sheet_factory.get_dat_lenh("D1:E2")
+    # UNFORMATTED_VALUE: lấy SỐ THẬT bên dưới ô, không qua chuỗi hiển thị của
+    # sheet (tránh đoán sai dấu . / , ngăn cách hàng nghìn hay thập phân).
+    result = gg_sheet_factory.get_dat_lenh("D1:E2", value_render_option="UNFORMATTED_VALUE")
     
     # ✅ Kiểm tra result có phải là HttpError không
     if isinstance(result, HttpError):
@@ -342,13 +353,21 @@ def get_capital_config():
       return None, None, None, True
     
     # Parse D1 (% tỷ lệ vốn)
+    #   UNFORMATTED_VALUE: nếu ô D1 được ĐỊNH DẠNG Percent trên Sheets (gõ "3%" thì
+    #   Sheets tự đổi ô thành dạng Percent) → Google trả THẲNG phân số 0.03, không
+    #   còn dấu '%' để nhận biết. Nếu ô KHÔNG định dạng Percent (gõ số trần "3" ý
+    #   là "3%") → Google trả nguyên số 3. Quy ước: giá trị <= 1 coi là ĐÃ là phân
+    #   số (giữ nguyên), > 1 coi là số phần trăm kiểu cũ (chia 100). Đúng ở mọi mức
+    #   thực tế (D1 hiếm khi vượt 100% vốn); vẫn giữ .replace('%','') cho ca hiếm ô
+    #   là VĂN BẢN có gõ kèm dấu %.
     d1_percent = None
     try:
-      if len(result[0]) > 0 and result[0][0]:
+      if len(result[0]) > 0 and result[0][0] not in (None, ''):
         d1_str = str(result[0][0]).strip().replace("%", "")
         if d1_str and d1_str not in ["#DIV/0!", "#VALUE!", "#ERROR!", "#N/A"]:
-          d1_percent = _so_viet(d1_str) / 100  # Convert % sang decimal (3.00% -> 0.03)
-          logger.info(f"D1 (% vốn): {d1_str}% = {d1_percent}")
+          d1_val = _so_viet(d1_str)
+          d1_percent = d1_val if d1_val <= 1 else d1_val / 100
+          logger.info(f"D1 (% vốn) — thô={result[0][0]!r} → {d1_percent:.4%}")
     except (ValueError, TypeError) as e:
       logger.warning(f"Không parse được D1: {e}")
     
@@ -1100,7 +1119,9 @@ def _do_entry_phase(mot_lenh_vao_moi_ma=False):
     # Cần đọc algo orders nếu bất kỳ leg nào CÓ THỂ là trailing (cố định hoặc chọn theo dòng)
     need_algo = True   # lệnh điều kiện (stop, stop limit, trailing) nay nằm ở Algo API
 
-    don_bay = gg_sheet_factory.get_dat_lenh(f"A{start_row}:Z{end_row}")
+    # UNFORMATTED_VALUE: đọc SỐ THẬT (giá D, đòn bẩy B, callback C/G, vốn H) —
+    # không qua chuỗi hiển thị nên không còn đoán sai dấu . / , ngăn cách.
+    don_bay = gg_sheet_factory.get_dat_lenh(f"A{start_row}:Z{end_row}", value_render_option="UNFORMATTED_VALUE")
     print(f"🔍 Scan {state_value} hàng {start_row}-{end_row} | {len(DL_LEGS)} leg (tab ĐẶT LỆNH)", flush=True)
     logger.info(f"Scan {state_value} {start_row}-{end_row}, legs={[(l['idx'], l['type'], l['role']) for l in DL_LEGS]}")
     print(f"📊 Đã đọc {len(don_bay)} dòng từ sheet", flush=True)

@@ -461,16 +461,32 @@ def execute_with_retry(func, *args, max_retries=2, **kwargs):
       print(f"Unexpected error: {e}", flush=True)
       raise
 
-def get_dat_lenh(range):
+def get_dat_lenh(range, value_render_option=None):
+  """Đọc dữ liệu từ tab ĐẶT LỆNH.
+
+  Args:
+    range: range string, vd "A4:Z53"
+    value_render_option: tùy chọn Google Sheets render. Mặc định (None) =
+        FORMATTED_VALUE — trả về CHUỖI hiển thị, ăn theo định dạng ô và
+        LOCALE của sheet (dấu . hay , ngăn cách hàng nghìn/thập phân tuỳ
+        cách sheet được set) → dễ đọc sai nếu code tự đoán dấu câu.
+        Đặt 'UNFORMATTED_VALUE' để lấy đúng SỐ THẬT bên dưới ô (Google tự
+        quy đổi theo định dạng ô, không phụ thuộc dấu chấm/phẩy hiển thị) —
+        dùng cho mọi ô SỐ (giá D, đòn bẩy B, callback C/G, vốn H, D1/D2/E2).
+        Chỉ trả về chuỗi thô nếu ô đó thật sự là ô VĂN BẢN (Plain text).
+  """
   RANGE_NAME = f"'{tab_dat_lenh}'!{range}"
   if not _service_initialized or service is None or spreadsheets_service is None:
     init_sheet_api()
   
   def _execute():
+    kwargs = {"spreadsheetId": spreadsheetId, "range": RANGE_NAME}
+    if value_render_option:
+        kwargs["valueRenderOption"] = value_render_option
     result = (
       spreadsheets_service  # ✅ Dùng cached resource
       .values()
-      .get(spreadsheetId=spreadsheetId, range=RANGE_NAME)
+      .get(**kwargs)
       .execute()
     )
     return result.get("values", [])
