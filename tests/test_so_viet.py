@@ -9,7 +9,7 @@ vốn D1/D2/E2/H) thì chưa — vá qua hàm dùng chung _so_viet().
 
     python3 tests/test_so_viet.py
 """
-import os, sys
+import io, os, sys
 
 QBOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, QBOT)
@@ -54,6 +54,27 @@ def test_von_D1_D2_E2_dau_phay(monkeypatch):
     assert abs(d1 - 0.035) < 1e-9
     assert d2 == 10.5
     assert e2 == 1000.25
+
+
+def test_don_bay_dau_phay_khong_crash_nua():
+    """Trước đây is_number() (đã hiểu dấu phẩy) đi qua được, nhưng dòng SAU ĐÓ
+    còn gọi float(lev_str) THẲNG (không đổi phẩy) → crash ngay dòng kế tiếp.
+    Đòn bẩy '5,5' phải nhất quán với is_number: qua được cả hai bước."""
+    assert M.is_number("5,5")
+    assert M._so_viet("5,5") == 5.5
+    try:
+        float("5,5")
+        assert False, "float() gốc của Python phải KHÔNG hiểu dấu phẩy (nếu ra thì Python đã đổi)"
+    except ValueError:
+        pass  # đúng như mong đợi — chứng minh nếu code còn gọi float() thẳng sẽ crash
+
+
+def test_khong_con_cho_nao_goi_float_lev_str_thang():
+    """Soát lại nguồn: is_number(lev_str) dùng _so_viet, các bước xử lý lev_str
+    sau đó phải cũng dùng _so_viet, không được còn float(lev_str) trần trụi."""
+    src = io.open(os.path.join(QBOT, "hd_order_multi.py"), encoding="utf-8").read()
+    assert "float(lev_str)" not in src, "còn chỗ gọi float(lev_str) thẳng — sẽ crash với đòn bẩy kiểu '5,5'"
+    assert src.count("_so_viet(lev_str)") == 2, "đòn bẩy phải đổi phẩy ở CẢ bước kiểm tra lẫn bước setLeverage"
 
 
 def test_plan_row_gia_dau_phay_dat_dung_lenh():

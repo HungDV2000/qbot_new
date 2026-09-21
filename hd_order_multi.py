@@ -1123,7 +1123,7 @@ def _do_entry_phase(mot_lenh_vao_moi_ma=False):
             if len(d) <= leverage_idx or not str(d[leverage_idx]).strip():
                 continue
             lev_str = str(d[leverage_idx]).strip()
-            if lev_str in ('N', '0') or not is_number(lev_str) or float(lev_str) <= 0:
+            if lev_str in ('N', '0') or not is_number(lev_str) or _so_viet(lev_str) <= 0:
                 continue
 
             # --- Kiểm tra tradeable + chuẩn hóa symbol ---
@@ -1168,7 +1168,7 @@ def _do_entry_phase(mot_lenh_vao_moi_ma=False):
             # --- Set leverage (chỉ khi chưa có vị thế và có leg entry) ---
             if not has_pos and any(l['role'] == 'entry' for l in DL_LEGS):
                 try:
-                    exchange.setLeverage(int(float(lev_str)), symbol)
+                    exchange.setLeverage(int(_so_viet(lev_str)), symbol)
                 except Exception as e:
                     logger.warning(f"{symbol}: không set được leverage: {e}")
 
