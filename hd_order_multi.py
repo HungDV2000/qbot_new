@@ -214,9 +214,15 @@ def get_position_amt(sym):
     return _vi_the(sym)[0]
 
 
+def _so_viet(v):
+    """float() nhưng chấp nhận dấu phẩy kiểu Việt: '13,467' -> 13.467.
+    ⚠️ Không dùng cho số có cả dấu . và , (kiểu 1.234,56) — sheet chỉ dùng 1 kiểu."""
+    return float(str(v).strip().replace(',', '.'))
+
+
 def is_number(s):
     try:
-        float(s)
+        _so_viet(s)
         return True
     except ValueError:
         return False
@@ -341,7 +347,7 @@ def get_capital_config():
       if len(result[0]) > 0 and result[0][0]:
         d1_str = str(result[0][0]).strip().replace("%", "")
         if d1_str and d1_str not in ["#DIV/0!", "#VALUE!", "#ERROR!", "#N/A"]:
-          d1_percent = float(d1_str) / 100  # Convert % sang decimal (3.00% -> 0.03)
+          d1_percent = _so_viet(d1_str) / 100  # Convert % sang decimal (3.00% -> 0.03)
           logger.info(f"D1 (% vốn): {d1_str}% = {d1_percent}")
     except (ValueError, TypeError) as e:
       logger.warning(f"Không parse được D1: {e}")
@@ -352,7 +358,7 @@ def get_capital_config():
       if len(result[1]) > 0 and result[1][0]:
         d2_str = str(result[1][0]).strip()
         if d2_str and d2_str not in ["#DIV/0!", "#VALUE!", "#ERROR!", "#N/A"]:
-          d2_default = float(d2_str)
+          d2_default = _so_viet(d2_str)
           logger.info(f"D2 (vốn mặc định): {d2_default} USDT")
     except (ValueError, TypeError) as e:
       logger.warning(f"Không parse được D2: {e}")
@@ -363,7 +369,7 @@ def get_capital_config():
       if len(result[1]) > 1 and result[1][1]:
         e2_str = str(result[1][1]).strip()
         if e2_str and e2_str not in ["#DIV/0!", "#VALUE!", "#ERROR!", "#N/A"]:
-          e2_total = float(e2_str)
+          e2_total = _so_viet(e2_str)
           logger.info(f"E2 (vốn tổng): {e2_total} USDT")
     except (ValueError, TypeError) as e:
       logger.warning(f"Không parse được E2: {e}")
@@ -500,7 +506,7 @@ def _read_cell_number(d, idx):
     raw = str(d[idx]).strip().replace('%', '')
     if not raw or not is_number(raw):
         return None
-    v = float(raw)
+    v = _so_viet(raw)
     return v if v > 0 else None
 
 def compute_capital(d, capital_idx, d1_percent, d2_default, e2_total):
@@ -509,7 +515,7 @@ def compute_capital(d, capital_idx, d1_percent, d2_default, e2_total):
         if len(d) > capital_idx and d[capital_idx]:
             h = str(d[capital_idx]).strip()
             if h and h not in ["#DIV/0!", "#VALUE!", "#ERROR!", "#N/A"]:
-                return float(h)
+                return _so_viet(h)
     except (ValueError, TypeError):
         pass
     if e2_total is not None and d1_percent is not None:
