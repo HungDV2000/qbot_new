@@ -683,6 +683,35 @@ def update_multi(tab_name, array_index, array_2d, from_column_alphabet_name):
   
   return execute_with_retry(_execute)
 
+def batch_update_values(tab_name, data):
+  """
+  Ghi NHIỀU vùng trong MỘT lệnh values.batchUpdate — Google áp dụng cùng lúc, không
+  có khoảnh khắc sheet nửa cũ nửa mới (trước đây xoá A–I rồi mới ghi: công thức
+  người dùng tham chiếu A–I thấy ô trống, lỗi giữa chừng là mất sạch).
+
+  Args:
+    tab_name: Tên tab
+    data    : [(vùng A1 không kèm tên tab, ma trận 2D), ...] — VD [("A4:I20", rows)]
+  """
+  if not data:
+    return None
+  body = {
+      "valueInputOption": "USER_ENTERED",
+      "data": [{"range": f"'{tab_name}'!{r}", "values": sanitize_sheet_values_2d(v)}
+               for r, v in data],
+  }
+  print(f"Ghi 1 lệnh batchUpdate: {', '.join(r for r, _ in data)} ('{tab_name}')", flush=True)
+  init_sheet_api()
+
+  def _execute():
+    result = spreadsheets_service.values().batchUpdate(
+        spreadsheetId=spreadsheetId, body=body).execute()
+    print(f"{result.get('totalUpdatedCells')} cells updated.", flush=True)
+    return result
+
+  return execute_with_retry(_execute)
+
+
 def batch_clear_values(tab_name, ranges_list):
   """
   Xóa trắng nhiều ô/range cùng lúc trong 1 API call duy nhất (tránh 429 rate limit).
@@ -711,7 +740,7 @@ def batch_clear_values(tab_name, ranges_list):
   return execute_with_retry(_execute)
 
 
-def clear_multi(tab_name, array_index,  from_column_alphabet_name, end_row=1000, end_column="AZ"):
+def clear_multi(tab_name, array_index,  from_column_alphabet_name, end_row=1000, *, end_column):
   """
   Clear dữ liệu trong sheet
   Args:
@@ -719,8 +748,11 @@ def clear_multi(tab_name, array_index,  from_column_alphabet_name, end_row=1000,
     array_index: Index (sẽ được convert thành row = 2 + array_index, hoặc nếu < 0 thì dùng abs)
     from_column_alphabet_name: Cột bắt đầu (VD: "A")
     end_row: Hàng kết thúc (default: 1000)
-    end_column: Cột kết thúc (default: "AZ")
+    end_column: Cột kết thúc — BẮT BUỘC ghi rõ. Trước đây mặc định "AZ": gọi quên
+      tham số là xoá luôn cột người dùng (J–P của "Chờ và khớp").
   """
+  if not end_column:
+    raise ValueError("clear_multi: phải ghi rõ end_column (không còn mặc định AZ)")
   # Fix: Nếu array_index < 0, dùng abs để clear từ hàng đó trực tiếp
   # Nếu array_index >= 0, dùng công thức 2 + array_index (giữ backward compatibility)
   if array_index < 0:

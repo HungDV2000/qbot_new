@@ -97,7 +97,7 @@ import cst
 tab_dat_lenh = cst.tab_dat_lenh
 tab_cho_va_khop = "Chờ và khớp"
 def init_sheet_api(): pass
-def get_dat_lenh(rng):
+def get_dat_lenh(rng, value_render_option=None):
     # Ghi lại sheet_id thực sự đang dùng → để kiểm chứng không lẫn tài khoản
     with open(cst.account_dir("data")/"sheet_reads.log","a",encoding="utf-8") as f:
         f.write(f"{cst.spreadsheet_id}|{rng}\n")
@@ -107,6 +107,7 @@ def get_dat_lenh(rng):
 def get_cho_va_khop(rng, value_render_option=None): return []
 def update_single_value(*a,**k): pass
 def update_multi(*a,**k): pass
+def batch_update_values(*a, **k): pass
 EOF
 mkdir -p googleapiclient && cat > googleapiclient/__init__.py <<'EOF'
 EOF

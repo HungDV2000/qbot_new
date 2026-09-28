@@ -125,7 +125,7 @@ def _ghi(rng):
 
 def init_sheet_api(): pass
 
-def get_dat_lenh(rng):
+def get_dat_lenh(rng, value_render_option=None):
     _ghi(rng)
     if rng.startswith("B2"):  return [["LONG"]]
     if rng.startswith("D1"):  return [["1%",""],["10","10"]]
@@ -150,6 +150,7 @@ def clear_multi(*a, **k): pass
 
 def update_single_value(*a,**k): pass
 def update_multi(*a,**k): pass
+def batch_update_values(*a, **k): pass
 EOF
 mkdir -p googleapiclient
 : > googleapiclient/__init__.py

@@ -54,6 +54,8 @@ THU = {
     "market":      False,    # kiểu 2: mua/bán market rồi đóng lại
     "lenh_thoat":  False,    # mở vị thế → thử CẮT LỖ closePosition, CHỐT LỜI limit,
                              # CHỐT LỜI trailing (từng lệnh đặt rồi huỷ) → đóng vị thế
+    "doi_gia_sltp": True,    # (cần lenh_thoat, dùng chung vị thế) SỬA GIÁ N/O: đặt SL+TP,
+                             # rồi huỷ lệnh cũ → đặt giá mới đúng như bot; kiểm còn đúng 1 SL + 1 TP
 }
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -77,7 +79,7 @@ if "cst" not in sys.modules:
     _cst = types.ModuleType("cst")
     _cst.key_binance, _cst.secret_binance = API_KEY, API_SECRET
     sys.modules["cst"] = _cst
-from binance_futures_direct import cancel_algo_orders  # noqa: E402
+from binance_futures_direct import cancel_algo_orders, cancel_algo_order  # noqa: E402
 
 FAPI = "https://fapi.binance.com"
 GOC = Path(__file__).resolve().parent.parent
@@ -238,6 +240,102 @@ def thu_lenh_cho(ten, mo_ta, dat):
         ket_qua.append((ten, "✅ OK", "❌ LỖI", str(e)[:160]))
 
 
+def huy_mot(la_algo, id_):
+    """Huỷ ĐÚNG MỘT lệnh — y như hd_order_multi._huy_mot_lenh khi dời giá SL/TP:
+    lệnh điều kiện (algo) → cancel_algo_order, lệnh thường → exchange.cancel_order."""
+    if la_algo:
+        return bool(cancel_algo_order(symbol, id_))
+    exchange.cancel_order(id_, symbol)
+    return True
+
+
+def dem_sl_tp():
+    """(số SL closePosition, số TP limit reduceOnly) đang mở trên sàn — REST riêng."""
+    so_sl = sum(1 for a in ds_algo(goi("GET", "/fapi/v1/openAlgoOrders", {"symbol": ma_api}))
+                if str(a.get("closePosition")).lower() == "true")
+    so_tp = sum(1 for o in goi("GET", "/fapi/v1/openOrders", {"symbol": ma_api})
+                if o.get("type") == "LIMIT" and str(o.get("reduceOnly")).lower() == "true")
+    return so_sl, so_tp
+
+
+def thu_doi_gia_sltp(phia_ra, kl_ra, sl1, sl2, tp1, tp2):
+    """
+    Bug 4 (09/2026): người dùng sửa giá N/O mà bot không gỡ lệnh cũ → SL closePosition
+    thứ 2 bị Binance từ chối (SL kẹt ở giá cũ), TP thành 2 lệnh. Bot mới: huỷ đúng lệnh
+    cũ RỒI đặt lệnh mới (hd_order_multi.huy_lenh_cu_roi_dat). Bước này làm y như vậy
+    trên sàn thật và kiểm: lệnh cũ hết, lệnh mới có, còn đúng 1 SL + 1 TP.
+    """
+    ten = "ĐỔI GIÁ SL/TP"
+    ghi("")
+    ghi(f"▶ {ten}: SL {sl1} → {sl2} · TP {tp1} → {tp2}")
+    if not CHAY_THAT:
+        ket_qua.append((ten, "(chưa gửi)", "", ""))
+        return
+    moi = []
+    try:
+        sl_cu = nhan_dien(helper.create_stop_market_order(symbol, phia_ra, kl_ra, sl1, True,
+                                                          close_position=True))
+        da_tao.append(sl_cu)
+        tp_cu = nhan_dien(helper.create_limit_order(symbol, phia_ra, kl_ra, tp1, True))
+        da_tao.append(tp_cu)
+        ghi(f"   ✅ Lệnh cũ: SL {'ALGO' if sl_cu[0] else 'THƯỜNG'} id={sl_cu[1]} · "
+            f"TP {'ALGO' if tp_cu[0] else 'THƯỜNG'} id={tp_cu[1]}")
+        time.sleep(CHO_GIAY)
+
+        # Bằng chứng bug cũ: đặt SL closePosition thứ 2 khi CHƯA huỷ cái cũ
+        try:
+            x = nhan_dien(helper.create_stop_market_order(symbol, phia_ra, kl_ra, sl2, True,
+                                                          close_position=True))
+            ghi(f"   ⚠️ Binance NHẬN SL closePosition thứ 2 (id={x[1]}) — huỷ ngay")
+            da_tao.append(x)
+            if huy_mot(*x):
+                da_tao.remove(x)
+        except Exception as e:
+            ghi(f"   ℹ️ Đúng như bug cũ: chưa huỷ SL cũ thì Binance từ chối SL mới — {str(e)[:120]}")
+
+        # Cách bot mới: huỷ đúng lệnh cũ rồi đặt lệnh mới
+        for cu in (sl_cu, tp_cu):
+            ok = huy_mot(*cu)
+            ghi(f"   {'✅' if ok else '❌'} Huỷ lệnh cũ {cu[1]}")
+            if ok:
+                da_tao.remove(cu)
+        sl_moi = nhan_dien(helper.create_stop_market_order(symbol, phia_ra, kl_ra, sl2, True,
+                                                           close_position=True))
+        moi.append(sl_moi); da_tao.append(sl_moi)
+        tp_moi = nhan_dien(helper.create_limit_order(symbol, phia_ra, kl_ra, tp2, True))
+        moi.append(tp_moi); da_tao.append(tp_moi)
+        ghi(f"   ✅ Lệnh mới: SL id={sl_moi[1]} @ {sl2} · TP id={tp_moi[1]} @ {tp2}")
+        time.sleep(CHO_GIAY)
+
+        con_cu = [c[1] for c in (sl_cu, tp_cu) if tim_tren_san(*c)]
+        thieu_moi = [m[1] for m in moi if not tim_tren_san(*m)]
+        so_sl, so_tp = dem_sl_tp()
+        ghi(f"   Trên sàn: {so_sl} SL closePosition · {so_tp} TP limit reduceOnly"
+            f"{' · CÒN lệnh cũ ' + str(con_cu) if con_cu else ''}"
+            f"{' · THIẾU lệnh mới ' + str(thieu_moi) if thieu_moi else ''}")
+        dat_ok = not con_cu and not thieu_moi and (so_sl, so_tp) == (1, 1)
+        ket_qua_dat = "✅ OK" if dat_ok else "❌ SAI"
+        chu = "" if dat_ok else f"SL={so_sl} TP={so_tp} cũ={con_cu} thiếu={thieu_moi}"
+    except Exception as e:
+        ghi(f"   ❌ LỖI: {e}")
+        ket_qua_dat, chu = "❌ LỖI", str(e)[:160]
+    # Dọn lệnh mới (bằng hàm dọn của bot như các bước khác)
+    huy_sach = True
+    for m in moi:
+        try:
+            if tim_tren_san(*m):
+                huy_mot(*m)
+            time.sleep(0.5)
+            if tim_tren_san(*m):
+                huy_sach = False
+            elif m in da_tao:
+                da_tao.remove(m)
+        except Exception as e:
+            ghi(f"   ❌ Không huỷ được {m[1]}: {e}")
+            huy_sach = False
+    ket_qua.append((ten, ket_qua_dat, "✅ OK" if huy_sach else "❌ CÒN LỆNH", chu))
+
+
 def mo_vi_the(ten, kl):
     """Market khớp ngay → trả khối lượng thực tế đã mở (có dấu)."""
     truoc = vi_the_hien_tai()
@@ -384,6 +482,10 @@ def chay():
                          lambda: helper.create_limit_order(symbol, phia_ra, kl_ra, tp, True))
             thu_lenh_cho("TP TRAILING reduceOnly", f"{phia_ra} {kl_ra} kích hoạt {tp} callback {CALLBACK_PCT}%",
                          lambda: helper.create_trailing_stop_order(symbol, phia_ra, kl_ra, tp, CALLBACK_PCT, True))
+            if THU.get("doi_gia_sltp"):
+                thu_doi_gia_sltp(phia_ra, kl_ra, sl,
+                                 lam_tron_gia(gia * (1 - d * (x + 0.01))), tp,
+                                 lam_tron_gia(gia * (1 + d * (x + 0.01))))
             if CHAY_THAT:
                 ghi("")
                 ghi("▶ Đóng vị thế đã mở để thử")

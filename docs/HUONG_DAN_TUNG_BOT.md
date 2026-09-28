@@ -120,7 +120,10 @@ SL/TP cho vị thế đang có, **không vào lệnh mới**. Thấy ổn mới 
 - **Gợi ý SL/TP** vào N/O từ giá vào: LONG → N = giá vào × (1 − %SL), O = giá vào × (1 + %TP);
   SHORT ngược lại. **Không bao giờ đè** số người dùng đã sửa.
 - Thứ tự dòng đổi (có vị thế mới) thì **J–P đi theo mã** — tick và giá SL/TP không
-  rơi sang mã khác. Ô công thức đứng yên tại chỗ.
+  rơi sang mã khác. Ô công thức đứng yên tại chỗ. Dòng cũ **không có mã** thì số ở J–P
+  của nó **không** trao cho mã mới đổ vào dòng đó: mã mới nhận gợi ý của chính nó.
+- Ghi `A2` + `A–I` + `Q` + `J–P` trong **một lệnh**, không xoá trước. Bảng ngắn lại thì
+  các dòng thừa được ghi thành ô trống. **Dòng 1–3 không bao giờ bị ghi** (trừ `A2`).
 
 | Cấu hình | Ở đâu | Mặc định |
 |---|---|---|
@@ -150,10 +153,13 @@ SL/TP cho vị thế đang có, **không vào lệnh mới**. Thấy ổn mới 
   ⚠️ `STOP` / `XÓA …` **lặp lại mỗi vòng** chừng nào B2 còn giữ giá trị đó, và trong
   lúc đó bot **không đặt SL/TP**. Xong việc đổi B2 về `CHỜ` ngay.
 
-  Mỗi mã chỉ vào **1 lần** (có vị thế rồi thì thôi) — trừ khi bật `allow_dca`.
+  Mỗi mã chỉ vào **1 lần**: có vị thế rồi, hoặc còn lệnh vào treo ở **giá khác** (giá D
+  đã đổi), thì thôi và báo Telegram "tick J để xoá lệnh cũ". Bật `allow_dca` thì không chặn.
 
 - **Pha B — SL/TP**, theo tab **Chờ và khớp**: dòng có **D = Y** và **P = Y** thì đặt
   cắt lỗ theo giá **N** và chốt lời theo giá **O**. Đã có lệnh giống thì bỏ qua.
+  Sửa N/O → **huỷ lệnh cũ rồi đặt lại**, mỗi mã đúng 1 SL + 1 TP. Giá dừng mới đã vượt
+  giá hiện tại thì giữ lệnh cũ.
 
 | Cấu hình | Mặc định | Ý nghĩa |
 |---|---|---|
@@ -206,8 +212,10 @@ thì bỏ qua — sửa giá cột D không sinh thêm lệnh thứ hai. Muốn 
 | **O** | Giá **kích hoạt chốt lời trailing**. Trống / `0` / `NGAY` → kích hoạt **ngay** |
 | **N1** | **Callback %** của chốt lời trailing (1 = 1%, Binance nhận 0.1–10). Trống → `callback_rate_123` |
 
-Đã có lệnh cắt lỗ / chốt lời trên Binance (bất kể giá, kể cả lệnh LIMIT do kiểu mới
-để lại) thì không đặt thêm. Giá cắt lỗ đã vượt giá hiện tại (sẽ khớp ngay) → bỏ qua.
+Đã có lệnh cắt lỗ / chốt lời trên Binance thì không đặt thêm. **Sửa N / O** thành giá
+khác lệnh đang có thì bot huỷ lệnh cũ (mọi SL, hoặc mọi TP của mã) rồi đặt lại, nên mỗi
+mã đúng 1 SL + 1 TP. N trống (SL theo %) hoặc O = `NGAY` thì không dời. Giá cắt lỗ đã
+vượt giá hiện tại (sẽ khớp ngay) thì bỏ qua và giữ SL cũ.
 `hd_update_cho_va_khop` vẫn điền gợi ý vào N/O như thường — O tự điền là giá kích hoạt.
 
 | Cấu hình | Mặc định | Ý nghĩa |
@@ -266,6 +274,7 @@ Muốn bỏ hẳn: đổi P = N trước rồi mới tick.
 | `cancel_orders_minutes` | 60 | Cách cũ, tính bằng **phút** |
 | `cancel_order_after_minutes` | 30 | Chỉ huỷ lệnh vào treo quá ngần này phút |
 | `cancel_all_orders` | false | ⚠️ true = huỷ **tất cả**, kể cả SL/TP → vị thế mất bảo vệ |
+| `cancel_trailing_entry` | false | false = **không** huỷ lệnh vào **trailing** theo giờ. Trailing chờ giá chạm điểm kích hoạt nên treo lâu là bình thường; huỷ đi thì bot đặt lệnh đặt lại ngay. Muốn bỏ trailing cũ thì tick **J** |
 
 Không muốn lệnh chờ bị tự huỷ (vd lệnh limit đặt xa, chờ lâu) thì **đừng bật** bot này.
 
@@ -348,6 +357,12 @@ Từng dòng mã:
 Dòng 1 (`E1`, `I1`, các số `0.3 / 0.6` ở `J1:M1`) **không bot nào đọc** — là cấu hình
 của bot cũ, để hay xoá đều được. Riêng **`N1`** = callback % khi dùng `hd_order_123`.
 
+⛔ **Quy ước vùng:** dòng **1–3** là của người dùng (bot chỉ ghi `A2`). Từ dòng **4**
+trở xuống, **A–I và Q** là của bot. **J–P** thì bot dời theo mã và điền gợi ý.
+Không đặt công thức, kể cả công thức tràn như `IMPORTRANGE` hay `ARRAYFORMULA`, chạm
+vào dòng 4+ của A–Q: công thức tràn bị chặn thì báo `#REF!` và mất cả khối. Ví dụ
+`IMPORTRANGE(…; "J2:P4")` đặt ở J2 phải sửa thành `"J2:P3"`.
+
 ---
 
 ## 6. THAM SỐ `config.ini` → BOT NÀO DÙNG
@@ -364,7 +379,7 @@ của bot cũ, để hay xoá đều được. Riêng **`N1`** = callback % khi 
 | `delay_cho_va_khop`, `fill_default_cho_va_khop`, `default_sl/tp_rate_layer_1`, `default_allow_order` | `hd_update_cho_va_khop` |
 | `delay_calert_possition_and_open_order` | `hd_alert_possition_and_open_order` |
 | `cancel_selective_seconds` | `hd_cancel_selective` |
-| `cancel_orders_seconds` / `cancel_orders_minutes`, `cancel_order_after_minutes`, `cancel_all_orders` | `hd_cancel_orders_schedule` |
+| `cancel_orders_seconds` / `cancel_orders_minutes`, `cancel_order_after_minutes`, `cancel_all_orders`, `cancel_trailing_entry` | `hd_cancel_orders_schedule` |
 | `delay_update_all`, `balance_cell` | `hd_update_all` |
 
 Sửa `config.ini` thì phải **tắt rồi bật lại** bot liên quan. Sửa trên **sheet tổng**

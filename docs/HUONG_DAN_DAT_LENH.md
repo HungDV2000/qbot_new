@@ -23,7 +23,7 @@ thiếu nó thì không có cắt lỗ.
 |---|---|
 | `hd_cancel_selective` | Muốn **xoá lệnh bằng tick J–M**. Không bật thì tick **không có tác dụng** |
 | `hd_alert_possition_and_open_order` | **Nên bật**: báo Telegram mở/đóng vị thế + dọn lệnh sót khi vị thế đóng |
-| `hd_cancel_orders_schedule` | Tuỳ: tự huỷ **lệnh VÀO** treo quá `cancel_order_after_minutes` (mặc định **30 phút**), không đụng SL/TP. ⚠️ Đặt limit chờ lâu thì tăng số này hoặc đừng bật |
+| `hd_cancel_orders_schedule` | Tuỳ: tự huỷ **lệnh VÀO** treo quá `cancel_order_after_minutes` (mặc định **30 phút**), không đụng SL/TP, **không đụng lệnh vào trailing** (`cancel_trailing_entry = false`). ⚠️ Đặt limit chờ lâu thì tăng số này hoặc đừng bật |
 | `hd_update_all` | Tuỳ: ghi số dư vào tab ĐẶT LỆNH `J1:M2` |
 
 ---
@@ -53,13 +53,14 @@ không có E2 thì lấy `D2`. ⚠️ **Tối thiểu 10 USDT** — dưới 10 b
 | 3 stop market · 4 stop limit | **Cao hơn** giá hiện tại | **Thấp hơn** giá hiện tại |
 | Cột G của kiểu 4 (giá limit) | **Bằng hoặc cao hơn** D (không thì dễ không khớp) | **Bằng hoặc thấp hơn** D |
 
-**Mỗi mã chỉ vào 1 lần** (đã có vị thế thì thôi).
+**Mỗi mã chỉ vào 1 lần**: đã có vị thế, hoặc còn lệnh vào đang treo, thì bot không đặt thêm.
 
-⚠️ **Muốn đổi giá lệnh đang chờ:** tick **J** ở tab Chờ và khớp để xoá lệnh cũ, rồi mới
-sửa giá.
-- **Kiểu MỚI:** sửa giá D khi lệnh cũ còn treo thì bot đặt **THÊM** một lệnh ở giá mới
-  → gấp đôi vốn.
-- **Kiểu CŨ:** bot không đặt thêm, nhưng cũng không đổi giá lệnh cũ.
+⚠️ **Muốn đổi giá lệnh vào đang chờ:** tick **J** ở tab Chờ và khớp để xoá lệnh cũ.
+Vòng sau bot đặt lại theo giá D mới.
+- Sửa D mà chưa xoá lệnh cũ thì bot **không đặt thêm**, chỉ báo Telegram một lần:
+  *"giá D đổi nhưng lệnh vào cũ còn treo — tick cột J…"*. Áp dụng cho cả kiểu MỚI và kiểu CŨ.
+- Riêng `allow_dca = true` (cho rải lệnh / DCA): bot vẫn đặt thêm ở giá mới. Chỉ bật
+  khi thật sự muốn nhiều lệnh vào cho một mã.
 
 **Bấm chạy bằng ô B2:**
 
@@ -92,6 +93,13 @@ Lệnh vào khớp xong, `hd_update_cho_va_khop` ghi mã vào tab này với **D
 ⚠️ **Kiểu mới:** O đặt sai phía (LONG mà O thấp hơn giá) thì lệnh chốt lời limit
 **khớp ngay = đóng vị thế**.
 
+**Dời SL/TP:** cứ sửa số ở N hoặc O. Vòng sau bot **huỷ lệnh cũ rồi đặt lệnh mới**, nên
+mỗi mã chỉ có **một** cắt lỗ và **một** chốt lời.
+- N mới đã vượt giá hiện tại (LONG mà N cao hơn giá) thì bot **giữ SL cũ** và bỏ qua.
+- Đã huỷ lệnh cũ mà lệnh mới bị Binance từ chối thì Telegram báo 🚨. Khi đó vào
+  Binance kiểm tra ngay, vì vị thế đang không có lệnh đó.
+- Kiểu cũ: N trống (SL tính theo %) hoặc O = `NGAY` thì bot **không dời**.
+
 ⏱️ Từ lúc khớp đến lúc có SL/TP có thể chậm tới `delay_cho_va_khop` (mặc định 600
 giây). Muốn nhanh hơn thì giảm số này trong `config.ini` rồi bật lại bot.
 
@@ -106,6 +114,11 @@ giây). Muốn nhanh hơn thì giảm số này trong `config.ini` rồi bật l
 
 Tick = ô checkbox, hoặc gõ `Y` / `X` / `1`. Muốn bỏ hẳn SL/TP thì đổi **P = N** trước,
 nếu không vòng sau bot đặt lại.
+
+⛔ **Từ dòng 4 trở xuống, cột A–Q là của bot.** Không đặt công thức ở đó, kể cả công
+thức tràn từ trên xuống. Ví dụ `IMPORTRANGE` ở J2 mà lấy `J2:P4` thì tràn xuống dòng 4
+→ sheet báo `#REF!`, mất hết tiêu đề. Chỉ lấy **tới dòng 3** (`J2:P3`).
+Dòng 1–3 bot không ghi, trừ ô `A2` (giờ cập nhật).
 
 ---
 

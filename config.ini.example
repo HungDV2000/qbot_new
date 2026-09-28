@@ -47,6 +47,10 @@ cancel_orders_seconds = 3600      ; bao lâu quét 1 lần (GIÂY)
 cancel_order_after_minutes = 30   ; chỉ huỷ LỆNH VÀO treo quá ngần này phút
 ; false (AN TOÀN): KHÔNG BAO GIỜ huỷ SL/TP.  true: huỷ tất — vị thế mất bảo vệ!
 cancel_all_orders = false
+; false (mặc định): KHÔNG huỷ lệnh VÀO kiểu TRAILING theo giờ — trailing chờ giá chạm
+; điểm kích hoạt, huỷ đi thì bot đặt lệnh đặt lại ngay → vòng huỷ/đặt vô ích.
+; Muốn bỏ trailing cũ: tick cột J (tab Chờ và khớp). true: huỷ như lệnh vào thường.
+cancel_trailing_entry = false
 
 ; ── BOT XOÁ LỆNH THEO TICK J–M (hd_cancel_selective) ──────────────────────────
 cancel_selective_seconds = 60     ; bao lâu đọc tick 1 lần (GIÂY, tối thiểu 15)

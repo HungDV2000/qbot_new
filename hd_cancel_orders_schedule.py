@@ -163,6 +163,23 @@ try:
     CANCEL_AFTER_MINUTES = cst.config.getint('global', 'cancel_order_after_minutes', fallback=30)
 except Exception:
     CANCEL_AFTER_MINUTES = 30
+# Lệnh vào TRAILING (hd_order / lệnh 1 kiểu trailing) chờ giá chạm điểm kích hoạt —
+# có thể mất hàng giờ, đó là thiết kế chứ không phải "treo quá lâu". Huỷ theo giờ thì
+# bot đặt lệnh đặt lại ngay vòng sau → huỷ/đặt vòng tròn. Mặc định GIỮ.
+try:
+    CANCEL_TRAILING_ENTRY = cst.config.getboolean('global', 'cancel_trailing_entry', fallback=False)
+except Exception:
+    CANCEL_TRAILING_ENTRY = False
+
+
+def _is_trailing(order):
+    """Lệnh trailing stop — lệnh thường (type/origType) hay lệnh Algo (orderType)."""
+    info = order.get('info', {}) if isinstance(order.get('info'), dict) else {}
+    for v in (order.get('type'), order.get('orderType'), info.get('type'),
+              info.get('origType'), info.get('orderType')):
+        if 'TRAILING' in str(v or '').upper():
+            return True
+    return False
 
 
 def _is_reduce_only(order):
@@ -203,6 +220,9 @@ def _should_cancel(order, symbol, kind):
 
     if _is_reduce_only(order):
         return False, "là lệnh SL/TP (reduce_only) — GIỮ để bảo vệ vị thế"
+
+    if not CANCEL_TRAILING_ENTRY and _is_trailing(order):
+        return False, "lệnh vào TRAILING — chờ giá chạm điểm kích hoạt (cancel_trailing_entry=false)"
 
     age = _order_age_minutes(order)
     if age is None:
@@ -372,7 +392,8 @@ if CANCEL_ALL_ORDERS:
     print("⚠️  CHẾ ĐỘ CŨ: hủy TẤT CẢ lệnh (kể cả SL/TP) — cancel_all_orders=true", flush=True)
 else:
     print(f"🛡️  Chế độ an toàn: chỉ hủy lệnh VÀO treo quá {CANCEL_AFTER_MINUTES} phút; "
-          f"KHÔNG đụng SL/TP (reduce_only)", flush=True)
+          f"KHÔNG đụng SL/TP (reduce_only)"
+          f"{'' if CANCEL_TRAILING_ENTRY else '; KHÔNG đụng lệnh vào trailing'}", flush=True)
 logger.info(f"Khởi động cancel orders scheduler - chạy mỗi {cst.cancel_orders_seconds}s")
 cst.bao_nhip('cancel_orders_seconds', cst.cancel_orders_seconds)
 

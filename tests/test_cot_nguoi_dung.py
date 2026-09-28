@@ -48,11 +48,25 @@ class TestCanChinh(unittest.TestCase):
         self.assertEqual(khoi[0][4], "=E4*0.98", "công thức phải đứng yên tại dòng")
         self.assertEqual(khoi[1][4], "", "công thức không được dời sang dòng khác")
 
-    def test_dong_cu_khong_co_ma_thi_giu_tai_cho(self):
-        """Vòng trước ghi A–I lỗi giữa chừng → A trống, KHÔNG được xoá số người dùng."""
-        cu = [["", "", "", "", "", "", "", "", "", "", "", "", "", 95, 104, "Y"]]
+    def test_dong_cu_khong_co_ma_KHONG_trao_JP_cho_ma_moi(self):
+        """🔴 Lỗi thật 09/2026: dòng cũ A trống còn N/O/P = 5008.78/5264.33/N (của mã
+        đã đi) → ETH mở vị thế đổ vào dòng đó và NHẬN LUÔN giá SL/TP của mã cũ."""
+        cu = [["", "", "", "", "", "", "", "", "", "", "", "", "", 5008.78, 5264.33, "N"]]
+        khoi, co_doi, _ = C.can_chinh(cu, [ai("ETH/USDT")], [["2400", "2600", "N"]], True)
+        self.assertEqual(khoi[0], ["", "", "", "", "2400", "2600", "N"],
+                         "mã mới phải nhận gợi ý của CHÍNH NÓ, không nhận số mồ côi")
+        self.assertTrue(co_doi)
+
+    def test_dong_cu_khong_co_ma_tick_mo_coi_khong_roi_vao_ma_moi(self):
+        cu = [["", "", "", "", "", "", "", "", "", "TRUE", "", "", "", "", "", ""]]
         khoi, _, _ = C.can_chinh(cu, [ai("BTC/USDT")], dien_goi_y=False)
-        self.assertEqual(khoi[0][4:], [95, 104, "Y"])
+        self.assertEqual(khoi[0], TRONG, "tick xoá lệnh mồ côi sẽ xoá nhầm lệnh BTC")
+
+    def test_dong_cu_khong_co_ma_va_dong_moi_cung_trong_thi_giu_tai_cho(self):
+        """Không có mã mới đổ vào → không có lý do xoá số người dùng."""
+        cu = [ap("BTC/USDT"), ["", "", "", "", "", "", "", "", "", "", "", "", "", 95, 104, "Y"]]
+        khoi, _, _ = C.can_chinh(cu, [ai("BTC/USDT")], dien_goi_y=False)
+        self.assertEqual(khoi[1][4:], [95, 104, "Y"])
 
     def test_dien_goi_y_chi_vao_o_trong(self):
         cu = [ap("BTC/USDT", jp=("", "", "", "", 95, "", ""))]

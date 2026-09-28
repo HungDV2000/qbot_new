@@ -17,8 +17,12 @@ Quy tắc:
       chiếu theo dòng, dời đi là trỏ sai mã. Công thức đứng yên tại chỗ.
     • Mã biến mất khỏi bảng → J–P của nó bị xoá theo (không để tick mồ côi
       rơi vào mã khác đổ vào dòng đó sau này).
-    • Dòng CŨ không có mã (cột A trống — vd vòng trước ghi A–I lỗi giữa chừng)
-      thì giữ nguyên J–P tại chỗ như trước đây, KHÔNG xoá số người dùng.
+    • Dòng CŨ không có mã (cột A trống) KHÔNG BAO GIỜ trao J–P cho một MÃ MỚI:
+      không biết số đó của mã nào → mã mới nhận J–P sạch (gợi ý N/O/P, tick trống).
+      Chỉ giữ tại chỗ khi dòng mới ở đó cũng không có mã (không xoá số người dùng
+      vô cớ). Lỗi thật 09/2026: SL/TP 5008.78/5264.33 của mã cũ rơi sang ETH.
+      (Trước đây "giữ tại chỗ" cả khi có mã mới — lý do cũ là A–I bị xoá rồi ghi
+      lỗi giữa chừng; nay A–I/Q/J–P ghi CÙNG 1 lệnh nên không còn tình huống đó.)
     • N/O/P còn trống thì điền gợi ý (nếu bật fill_default_cho_va_khop).
 """
 
@@ -81,8 +85,8 @@ def can_chinh(cu, moi_ai, goi_y=None, dien_goi_y=True):
         dong_cu_tai_cho = cu[i] if i < len(cu) else []
         k = khoa_moi[i] if i < len(moi_ai) else None
         nguon_i = theo_khoa.get(k) if k is not None else None
-        if nguon_i is None and i < len(cu) and khoa_cu[i] is None:
-            nguon_i = i                 # dòng cũ không có mã → giữ tại chỗ
+        if nguon_i is None and k is None and i < len(cu) and khoa_cu[i] is None:
+            nguon_i = i                 # cả cũ lẫn mới không có mã → giữ tại chỗ
         nguon = cu[nguon_i] if nguon_i is not None else []
         if nguon_i is not None and nguon_i != i:
             if any(not _rong(_o(nguon, COT_DAU + j)) and not la_cong_thuc(_o(nguon, COT_DAU + j))

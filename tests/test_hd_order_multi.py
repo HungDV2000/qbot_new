@@ -437,15 +437,16 @@ def test_spread_orders_close_prices_not_merged():
     """
     legs = [_entry_leg(1, 3), _entry_leg(2, 4), _entry_leg(3, 5)]
     d = ['ATOM/USDT', '10', '', '1.380', '1.379', '1.378', '', '10']
-    snap = []
-    placed = []
-    for leg in legs:                      # mô phỏng đặt lần lượt, snapshot tích lũy
-        plans, _ = M.plan_row([leg], d, 0, snap, True, 10, 1.413, 'buy')
-        for p in plans:
-            placed.append(p['price'])
-            snap.append({'family': 'limit', 'side': p['side'],
-                         'reduce_only': False, 'price': p['price']})
+    # Luồng thật: 1 dòng = 1 lần plan_row với ĐỦ các leg (chống trùng trong dòng qua `work`)
+    plans, _ = M.plan_row(legs, d, 0, [], True, 10, 1.413, 'buy')
+    placed = [p['price'] for p in plans]
     assert len(placed) == 3, f"Phải đặt đủ 3 lệnh, thực tế {len(placed)}: {placed}"
+
+    # Vòng sau: leg 3 lần trước bị Binance từ chối → chỉ đặt bù đúng leg 3
+    snap = [{'family': 'limit', 'side': 'buy', 'reduce_only': False, 'price': g}
+            for g in (1.380, 1.379)]
+    plans, _ = M.plan_row(legs, d, 0, snap, True, 10, 1.413, 'buy')
+    assert [p['price'] for p in plans] == [1.378], plans
 
 
 def test_identical_prices_still_deduped():

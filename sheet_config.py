@@ -227,7 +227,8 @@ def kiem_tra_du_khoa(bang):
 
 
 KHOA_BAT_TAT = {'allow_dca', 'exit_sl_close_position', 'exit_tp_resize',
-                'fill_default_cho_va_khop', 'cancel_all_orders', 'run_tele_command'}
+                'fill_default_cho_va_khop', 'cancel_all_orders', 'cancel_trailing_entry',
+                'run_tele_command'}
 
 
 def _so(v):

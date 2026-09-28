@@ -596,6 +596,7 @@ def build_symbol_snapshot(symbol, need_algo):
             'amount': amt,
             'id': o.get('id'),
             'close_position': cp,
+            'algo': False,
         })
     algo_ok = True
     if need_algo:
@@ -628,7 +629,8 @@ def build_symbol_snapshot(symbol, need_algo):
                     kl = None
                 snap.append({'family': fam, 'loai': phan_loai(a, True), 'side': str(a.get('side', '')).lower(),
                              'reduce_only': bool(ro) or cp, 'price': ap,
-                             'amount': kl or None, 'id': a.get('algoId'), 'close_position': cp})
+                             'amount': kl or None, 'id': a.get('algoId'), 'close_position': cp,
+                             'algo': True})
     return snap, algo_ok
 
 # Dung sai coi 2 lệnh là "cùng một giá" khi chống trùng.
@@ -654,16 +656,62 @@ def _snapshot_find(snap, family, side, reduce_only, price, tol=None):
     return None
 
 
+def _cung_gia(a, b, tol=None):
+    """Hai giá coi như bằng nhau (dung sai chống trùng). Thiếu giá → coi như bằng."""
+    if tol is None:
+        tol = _DEDUP_TOL
+    if a is None or b is None:
+        return True
+    ref = a if a > 0 else b
+    return ref > 0 and abs(a - b) / ref <= tol
+
+
+def lenh_vao_dang_cho(snap):
+    """Các lệnh VÀO (không reduceOnly — thường hay algo) đang treo của mã."""
+    return [s_ for s_ in snap if not s_['reduce_only']]
+
+
+def _lenh_thoat_can_huy(work, fam, side, price, muc_tieu, mot_leg):
+    """
+    Lệnh SL/TP CŨ phải gỡ trước khi đặt leg thoát ở giá `price`.
+    muc_tieu: [(family, giá)] của MỌI leg thoát trong dòng — lệnh đang khớp giá của
+    một leg khác thì KHÔNG phải lệnh cũ, không được đụng.
+    mot_leg=True (dòng chỉ có 1 leg thoát họ này — SL và TP thường như vậy): mỗi mã chỉ
+    giữ ĐÚNG MỘT lệnh → gỡ hết lệnh lệch giá, và gỡ cả lệnh trùng thừa.
+    mot_leg=False (nhiều leg cùng họ, VD chốt lời nhiều nấc): chỉ gỡ 1 lệnh lệch giá
+    gần nhất khi leg này chưa có lệnh.
+    """
+    cung = [s_ for s_ in work if s_.get('id') is not None and s_['family'] == fam
+            and s_['side'] == side and s_['reduce_only']]
+    if mot_leg:
+        khop = [s_ for s_ in cung if _cung_gia(s_.get('price'), price)]
+        return [s_ for s_ in cung if s_ not in khop] + khop[1:]
+    if any(_cung_gia(s_.get('price'), price) for s_ in cung):
+        return []
+    lech = [s_ for s_ in cung
+            if not any(f == fam and g is not None and _cung_gia(s_.get('price'), g)
+                       for f, g in muc_tieu)]
+    if not lech:
+        return []
+    return [min(lech, key=lambda s_: abs(s_['price'] - price))]
+
+
 def plan_row(legs, d, pos_amt, snap, algo_ok, capital, last_price, entry_side,
              round_price=None, round_amount=None, allow_dca=False,
              allow_close_position=False, resize_exits=False, resize_tol=0.01,
-             cancel_out=None):
+             cancel_out=None, canh_bao_out=None):
     """
     Thuần logic (KHÔNG gọi API) — quyết định các lệnh cần đặt cho 1 dòng.
     Trả (plans, skips):
       plans: [{'leg_idx','type','role','side','price','aux','amount','reduce_only'}]
       skips: [(leg_idx, lý_do)]  — để log/debug
     round_price/round_amount: hàm làm tròn (None = giữ nguyên) → test không cần exchange.
+    cancel_out: nhận các lệnh cũ cần huỷ TRƯỚC khi đặt — tuple
+      (id, leg_idx, cũ, mới, lý_do) với lý_do 'kl' (vị thế đổi khối lượng) hoặc
+      'gia' (người dùng đổi giá SL/TP ở cột N/O). None = caller không huỷ được →
+      leg cần huỷ lệnh cũ sẽ bị bỏ qua (không đặt chồng lên).
+    canh_bao_out: nhận (leg_idx, giá_mới, giá_lệnh_cũ) khi giá cột D đổi mà lệnh
+      vào cũ còn treo — caller báo Telegram.
     """
     rp = round_price if round_price else (lambda x: x)
     ra = round_amount if round_amount else (lambda x: x)
@@ -672,6 +720,24 @@ def plan_row(legs, d, pos_amt, snap, algo_ok, capital, last_price, entry_side,
     work = list(snap)  # bản sao snapshot để chống trùng ngay trong cùng dòng
     plans, skips = [], []
     cancel_ids = cancel_out if cancel_out is not None else []
+
+    # Giá mong muốn của mọi leg (vào / thoát) trong dòng — để phân biệt lệnh "cũ bị
+    # dời giá" với lệnh đang đúng giá của một leg khác.
+    muc_tieu_vao, muc_tieu_thoat = [], []
+    for l2 in legs:
+        lt2 = _resolve_leg_type(l2, d)
+        if lt2 is None:
+            continue
+        g2 = None if lt2 == 'market' else _read_cell_number(d, l2['col'])
+        (muc_tieu_vao if l2['role'] == 'entry' else muc_tieu_thoat).append(
+            (_leg_family(lt2), rp(g2) if g2 is not None else None))
+    # Lệnh vào đang treo mà KHÔNG khớp giá leg vào nào của dòng = giá D đã đổi (hoặc
+    # công thức D tự nhảy). Lệnh khớp giá một leg thì chống trùng từng leg như cũ →
+    # rải nhiều leg vào trong 1 dòng vẫn chạy.
+    vao_cu_lech = [s_ for s_ in lenh_vao_dang_cho(snap)
+                   if not any(f == s_['family'] and g is not None and _cung_gia(s_.get('price'), g)
+                              for f, g in muc_tieu_vao)]
+
     for leg in legs:
         # Kiểu lệnh của leg này — theo dòng (type_col) hoặc cố định (config)
         lt = _resolve_leg_type(leg, d)
@@ -698,6 +764,25 @@ def plan_row(legs, d, pos_amt, snap, algo_ok, capital, last_price, entry_side,
             if price is None:
                 skips.append((leg['idx'], 'cột giá trống')); continue
             price = rp(price)
+
+        if is_entry and not allow_dca:
+            # 1 mã chỉ 1 lượt vào: còn lệnh vào cũ treo ở giá KHÁC (thường hay
+            # trailing/stop) thì thôi. Trước đây chỉ chống trùng khi CÙNG giá → sửa giá D
+            # (hoặc công thức D tự nhảy) là mỗi vòng sinh thêm 1 lệnh mới.
+            if vao_cu_lech:
+                gia_cu = vao_cu_lech[0].get('price')
+                if canh_bao_out is not None and price is not None and not _cung_gia(gia_cu, price):
+                    canh_bao_out.append((leg['idx'], price, gia_cu))
+                skips.append((leg['idx'], f'đã có lệnh vào đang chờ @ {gia_cu} '
+                                          f'(muốn đổi giá: tick J để xoá lệnh cũ)')); continue
+            if not algo_ok:
+                skips.append((leg['idx'], 'algo API lỗi — không biết đã có lệnh vào chưa, bỏ để tránh trùng')); continue
+
+        if not is_entry and lt in ('stop_market', 'stop_limit') and price is not None:
+            # Lệnh dừng thoát đã vượt giá hiện tại → Binance từ chối (-2021). Không được
+            # huỷ lệnh cũ để rồi đặt lệnh mới hỏng → vị thế trần trụi.
+            if (side == 'sell' and price >= last_price) or (side == 'buy' and price <= last_price):
+                skips.append((leg['idx'], f'giá dừng {price} đã vượt giá hiện tại {last_price} — giữ lệnh cũ')); continue
 
         aux = None
         if lt in ('stop_limit', 'trailing'):
@@ -728,6 +813,19 @@ def plan_row(legs, d, pos_amt, snap, algo_ok, capital, last_price, entry_side,
         # không cần khối lượng nên KHÔNG bao giờ phải đặt lại khi vị thế tăng.
         use_close_position = (not is_entry) and lt == 'stop_market' and allow_close_position
 
+        # Người dùng đổi giá SL/TP (cột N/O) → lệnh cũ lệch giá phải huỷ rồi đặt lại.
+        # Trước đây chỉ chống trùng khi CÙNG giá → SL closePosition bị Binance từ chối
+        # (đã có 1 cái), TP thì thành 2 lệnh.
+        if not is_entry and price is not None:
+            mot_leg = sum(1 for f, _g in muc_tieu_thoat if f == fam) <= 1
+            huy_leg = _lenh_thoat_can_huy(work, fam, side, price, muc_tieu_thoat, mot_leg)
+            if huy_leg:
+                if cancel_out is None:
+                    skips.append((leg['idx'], 'giá SL/TP đổi nhưng pha này không huỷ được lệnh cũ')); continue
+                for s_ in huy_leg:
+                    cancel_ids.append((s_.get('id'), leg['idx'], s_.get('price'), price, 'gia'))
+                    work.remove(s_)
+
         # Đã có lệnh tương tự chưa? (cùng loại + chiều + reduce_only + giá)
         existing = _snapshot_find(work, fam, side, reduce_only, price)
         if existing is not None:
@@ -739,7 +837,7 @@ def plan_row(legs, d, pos_amt, snap, algo_ok, capital, last_price, entry_side,
             have = existing.get('amount')
             if (resize_exits and have and want > 0
                     and abs(have - want) / want > resize_tol):
-                cancel_ids.append((existing.get('id'), leg['idx'], have, want))
+                cancel_ids.append((existing.get('id'), leg['idx'], have, want, 'kl'))
                 work.remove(existing)          # coi như đã gỡ, cho phép đặt lại
             else:
                 skips.append((leg['idx'], 'đã có lệnh tương tự')); continue
@@ -799,6 +897,81 @@ def _place_order(symbol, p, tag="ORDER"):
         print(f"❌ {symbol} leg{leg_idx} lỗi đặt lệnh: {e}", flush=True)
         logger.error(f"{symbol} leg{leg_idx} lỗi: {e}", exc_info=True)
         return False
+
+
+_DA_CANH_BAO_GIA_D = {}   # symbol → (giá D, giá lệnh cũ) đã báo — không spam mỗi vòng
+
+
+def canh_bao_gia_d_doi(symbol, gia_moi, gia_cu):
+    """Giá cột D đổi mà lệnh vào cũ còn treo → bot KHÔNG tự đặt thêm lệnh (tránh gấp
+    đôi vốn), chỉ báo Telegram MỘT lần cho mỗi cặp giá."""
+    khoa = (gia_moi, gia_cu)
+    if _DA_CANH_BAO_GIA_D.get(symbol) == khoa:
+        return False
+    _DA_CANH_BAO_GIA_D[symbol] = khoa
+    msg = (f"⚠️ <b>{symbol}</b>: giá D đổi ({gia_cu} → {gia_moi}) nhưng lệnh vào cũ "
+           f"@ {gia_cu} còn treo — bot KHÔNG đặt thêm. Muốn đổi giá: tick cột J "
+           f"(tab Chờ và khớp) để xoá lệnh cũ, vòng sau bot đặt lại theo giá D mới.")
+    print(msg, flush=True)
+    logger.warning(msg)
+    try:
+        telegram_factory.send_tele(msg, cst.chat_id, True, True)
+    except Exception:
+        pass
+    return True
+
+
+def _huy_mot_lenh(symbol, oid, snap):
+    """Huỷ 1 lệnh theo id — lệnh điều kiện (algo) đi Algo API, lệnh thường đi ccxt.
+    True nếu huỷ được."""
+    la_algo = any(s_.get('id') == oid and s_.get('algo') for s_ in snap)
+    if la_algo:
+        from binance_futures_direct import cancel_algo_order
+        return bool(cancel_algo_order(symbol, oid))
+    exchange.cancel_order(oid, symbol)
+    return True
+
+
+def huy_lenh_cu_roi_dat(symbol, snap, can_huy, plans, tag="SL/TP"):
+    """
+    Huỷ các lệnh cũ trong can_huy (tuple của plan_row / ke_hoach_123) RỒI mới đặt plans.
+    Huỷ lỗi → bỏ lệnh mới của leg đó (không đặt chồng: SL closePosition sẽ bị Binance
+    từ chối, TP thì thành 2 lệnh). Đã huỷ lệnh cũ mà đặt lệnh mới lỗi → báo Telegram
+    vì vị thế đang KHÔNG CÓ SL/TP. Trả danh sách plans đã đặt.
+    """
+    da_go = set()          # leg đã gỡ lệnh cũ — nếu đặt mới lỗi phải báo gấp
+    hong = set()           # leg huỷ lỗi — không đặt lệnh mới
+    for oid, leg_idx, cu, moi, ly_do in can_huy:
+        if not oid:
+            continue
+        mo_ta = f"giá {cu} → {moi}" if ly_do == 'gia' else f"KL {cu} → {round(moi, 6)}"
+        try:
+            ok = _huy_mot_lenh(symbol, oid, snap)
+        except Exception as e:
+            ok = False
+            logger.error(f"[{tag}] {symbol}: hủy {oid} lỗi: {e}")
+        if ok:
+            da_go.add(leg_idx)
+            print(f"♻️  [{tag}] {symbol} leg{leg_idx}: hủy lệnh cũ ({mo_ta}) để đặt lại", flush=True)
+            logger.info(f"[{tag}] {symbol} leg{leg_idx}: hủy {oid}, {mo_ta}")
+        else:
+            hong.add(leg_idx)
+            print(f"⚠️  [{tag}] {symbol} leg{leg_idx}: không hủy được lệnh cũ {oid} → chưa đặt lại",
+                  flush=True)
+    plans = [x for x in plans if x['leg_idx'] not in hong]
+    for p in plans:
+        ok = _place_order(symbol, p, tag=tag)
+        if not ok and p['leg_idx'] in da_go:
+            msg = (f"🚨 <b>{symbol} leg{p['leg_idx']}</b>: đã huỷ lệnh cũ để dời giá "
+                   f"nhưng đặt lệnh mới @ {p['price']} LỖI — vị thế đang KHÔNG CÓ lệnh này. "
+                   f"Vào Binance kiểm tra!")
+            print(msg, flush=True)
+            logger.error(msg)
+            try:
+                telegram_factory.send_tele(msg, cst.chat_id, True, True)
+            except Exception:
+                pass
+    return plans
 
 
 def scan_cho_va_khop_legs(legs, rows=None, lap_ke_hoach=None):
@@ -888,7 +1061,8 @@ def scan_cho_va_khop_legs(legs, rows=None, lap_ke_hoach=None):
             # capital=None vì leg exit tính khối lượng theo vị thế, không theo vốn
             can_huy = []
             if lap_ke_hoach is not None:
-                plans, skips = lap_ke_hoach(d, pos_amt, gia_vao, last_price, snap, algo_ok, _rp, _ra)
+                plans, skips = lap_ke_hoach(d, pos_amt, gia_vao, last_price, snap, algo_ok, _rp, _ra,
+                                            cancel_out=can_huy)
             else:
                 plans, skips = plan_row(legs, d, pos_amt, snap, algo_ok, None, last_price,
                                         "buy", round_price=_rp, round_amount=_ra,
@@ -898,23 +1072,7 @@ def scan_cho_va_khop_legs(legs, rows=None, lap_ke_hoach=None):
             for leg_idx, reason in skips:
                 logger.info(f"[SL/TP][{symbol}] leg{leg_idx} bỏ qua: {reason}")
 
-            # Vị thế đã đổi (rải lệnh khớp thêm) → hủy lệnh cũ để đặt lại đúng khối lượng
-            for oid, leg_idx, cu, moi in can_huy:
-                if not oid:
-                    continue
-                try:
-                    exchange.cancel_order(oid, symbol)
-                    print(f"♻️  [SL/TP] {symbol} leg{leg_idx}: hủy lệnh cũ "
-                          f"(KL {cu} → {round(moi, 6)}) để đặt lại", flush=True)
-                    logger.info(f"[SL/TP] {symbol} leg{leg_idx}: hủy {oid}, KL {cu} → {moi}")
-                except Exception as e:
-                    print(f"⚠️  [SL/TP] {symbol} leg{leg_idx}: không hủy được lệnh cũ {oid}: {e}",
-                          flush=True)
-                    logger.error(f"[SL/TP] {symbol}: hủy {oid} lỗi: {e}")
-                    plans = [x for x in plans if x['leg_idx'] != leg_idx]
-
-            for p in plans:
-                _place_order(symbol, p, tag="SL/TP")
+            plans = huy_lenh_cu_roi_dat(symbol, snap, can_huy, plans, tag="SL/TP")
 
         except Exception as e:
             print(f"❌ [SL/TP] Lỗi xử lý dòng {ri}: {e}", flush=True)
@@ -1174,6 +1332,11 @@ def _do_entry_phase(mot_lenh_vao_moi_ma=False):
             # sửa giá cột D không được sinh thêm lệnh thứ hai (gấp đôi vốn).
             if mot_lenh_vao_moi_ma and co_lenh_vao_dang_cho(snap):
                 print(f"   ⏭️ {symbol}: đã có lệnh vào đang chờ — bỏ qua", flush=True)
+                gia_d = next((_read_cell_number(d, l['col']) for l in DL_LEGS
+                              if l['role'] == 'entry'), None)
+                gia_cu = lenh_vao_dang_cho(snap)[0].get('price')
+                if gia_d is not None and not _cung_gia(gia_cu, gia_d):
+                    canh_bao_gia_d_doi(symbol, gia_d, gia_cu)
                 continue
             has_pos = (pos_amt != 0)
             exit_side = "sell" if pos_amt > 0 else "buy"
@@ -1204,16 +1367,19 @@ def _do_entry_phase(mot_lenh_vao_moi_ma=False):
                     return float(exchange.amount_to_precision(symbol, v))
                 except Exception:
                     return v
+            can_huy, canh_bao = [], []
             plans, skips = plan_row(DL_LEGS, d, pos_amt, snap, algo_ok, capital, lastPrice,
                                     entry_side, round_price=_rp, round_amount=_ra,
                                     allow_dca=ALLOW_DCA and not mot_lenh_vao_moi_ma,
-                                    allow_close_position=SL_CLOSE_POSITION)
+                                    allow_close_position=SL_CLOSE_POSITION,
+                                    cancel_out=can_huy, canh_bao_out=canh_bao)
             for leg_idx, reason in skips:
                 logger.info(f"[{symbol}] leg{leg_idx} bỏ qua: {reason}")
+            for _leg, gia_moi, gia_cu in canh_bao:
+                canh_bao_gia_d_doi(symbol, gia_moi, gia_cu)
 
-            # --- Thực thi từng lệnh trong kế hoạch ---
-            for p in plans:
-                _place_order(symbol, p, tag="ENTRY")
+            # --- Thực thi: huỷ lệnh cũ (SL/TP dời giá) rồi đặt ---
+            huy_lenh_cu_roi_dat(symbol, snap, can_huy, plans, tag="ENTRY")
 
         except Exception as e:
             print(f"❌ Lỗi xử lý dòng {row_count} (symbol: {sym if 'sym' in locals() else 'N/A'}): {e}", flush=True)
@@ -1322,12 +1488,16 @@ def _o_la_ngay(raw):
 
 
 def ke_hoach_123(d, pos_amt, gia_vao, last_price, snap, algo_ok, callback, sl_pct,
-                 round_price=None, round_amount=None):
+                 round_price=None, round_amount=None, cancel_out=None):
     """
     Thuần logic (KHÔNG gọi API) — SL/TP kiểu hd_order_123 cũ cho 1 dòng "Chờ và khớp".
-      • Cắt lỗ: STOP MARKET tại giá N (N trống → giá vào ∓ %SL). Đã có cắt lỗ (bất kể giá) → thôi.
+      • Cắt lỗ: STOP MARKET tại giá N (N trống → giá vào ∓ %SL). Đã có cắt lỗ → thôi,
+        TRỪ KHI người dùng gõ giá N khác giá lệnh cũ → huỷ lệnh cũ, đặt lại ở giá mới.
       • Chốt lời: TRAILING kích hoạt tại giá O, callback % = ô N1. O trống / 0 / NGAY →
-        kích hoạt ngay quanh giá hiện tại. Đã có chốt lời (trailing hay limit) → thôi.
+        kích hoạt ngay quanh giá hiện tại. Đã có chốt lời → thôi, TRỪ KHI O là giá cụ thể
+        khác giá kích hoạt của trailing cũ → huỷ trailing cũ, đặt lại.
+    Mỗi mã giữ ĐÚNG MỘT SL và MỘT TP: khi đổi giá, gỡ hết lệnh cũ cùng loại.
+    cancel_out: như plan_row — None thì không đổi giá được (giữ lệnh cũ).
     Trả (plans, skips) cùng dạng plan_row.
     """
     rp = round_price if round_price else (lambda x: x)
@@ -1342,7 +1512,23 @@ def ke_hoach_123(d, pos_amt, gia_vao, last_price, snap, algo_ok, callback, sl_pc
     loai = {s_.get('loai') for s_ in snap}
     plans, skips = [], []
 
-    if 'SL' in loai:
+    def _doi_gia(cu_list, gia_moi, leg_idx):
+        """Lệnh cũ lệch giá mới → đưa vào cancel_out. Trả True nếu phải đặt lại."""
+        if cancel_out is None or gia_moi is None or not cu_list:
+            return False
+        if any(_cung_gia(s_.get('price'), gia_moi) for s_ in cu_list):
+            return False
+        for s_ in cu_list:
+            cancel_out.append((s_.get('id'), leg_idx, s_.get('price'), gia_moi, 'gia'))
+        return True
+
+    sl_cu = [s_ for s_ in snap if s_.get('loai') == 'SL' and s_.get('id') is not None]
+    sl_n = _read_cell_number(d, 13)                        # cột N — giá người dùng gõ
+    if sl_n is not None:
+        sl_n = rp(sl_n)
+        if (la_long and sl_n >= last_price) or (not la_long and sl_n <= last_price):
+            sl_n = None                                    # giá hỏng → không đụng lệnh cũ
+    if 'SL' in loai and not _doi_gia(sl_cu, sl_n, 2):
         skips.append((2, 'đã có lệnh cắt lỗ'))
     else:
         sl = _read_cell_number(d, 13)                      # cột N
@@ -1359,7 +1545,11 @@ def ke_hoach_123(d, pos_amt, gia_vao, last_price, snap, algo_ok, callback, sl_pc
                               'price': sl, 'aux': None, 'amount': amount, 'reduce_only': True,
                               'close_position': SL_CLOSE_POSITION})
 
-    if 'TP' in loai:
+    tp_cu = [s_ for s_ in snap if s_.get('loai') == 'TP' and s_.get('id') is not None]
+    o_raw = d[14] if len(d) > 14 else None
+    tp_o = None if _o_la_ngay(o_raw) else _read_cell_number(d, 14)
+    tp_o = rp(tp_o) if tp_o is not None else None
+    if 'TP' in loai and not (algo_ok and _doi_gia(tp_cu, tp_o, 3)):
         skips.append((3, 'đã có lệnh chốt lời'))
     elif not algo_ok:
         skips.append((3, 'algo API lỗi, bỏ để tránh trùng'))
@@ -1398,8 +1588,9 @@ def scan_sltp_123():
     sl_pct = float(getattr(cst, 'default_sl_rate_layer_1', 0) or 0)
     print(f"🧮 [123] callback = {callback}% (ô N1) · %SL khi N trống = {sl_pct}", flush=True)
 
-    def _lap(d, pos_amt, gia_vao, last_price, snap, algo_ok, rp, ra):
-        return ke_hoach_123(d, pos_amt, gia_vao, last_price, snap, algo_ok, callback, sl_pct, rp, ra)
+    def _lap(d, pos_amt, gia_vao, last_price, snap, algo_ok, rp, ra, cancel_out=None):
+        return ke_hoach_123(d, pos_amt, gia_vao, last_price, snap, algo_ok, callback, sl_pct,
+                            rp, ra, cancel_out=cancel_out)
 
     scan_cho_va_khop_legs([], rows=bang[3:], lap_ke_hoach=_lap)
 

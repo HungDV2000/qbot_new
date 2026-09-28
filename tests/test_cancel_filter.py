@@ -14,7 +14,7 @@ def _mod(n, **a):
     m = types.ModuleType(n); [setattr(m, k, v) for k, v in a.items()]; sys.modules[n] = m; return m
 
 
-def _load(cancel_all=False, after_min=30):
+def _load(cancel_all=False, after_min=30, huy_trailing=None):
     """Nạp lại module hd_cancel_orders_schedule với cấu hình mong muốn."""
     for m in ("hd_cancel_orders_schedule", "cst", "ccxt", "gg_sheet_factory",
               "telegram_factory", "binance_futures_direct"):
@@ -27,8 +27,11 @@ def _load(cancel_all=False, after_min=30):
     _mod("ccxt", binance=FE)
 
     cfg = configparser.ConfigParser()
-    cfg.read_dict({"global": {"cancel_all_orders": str(cancel_all).lower(),
-                              "cancel_order_after_minutes": str(after_min)}})
+    g = {"cancel_all_orders": str(cancel_all).lower(),
+         "cancel_order_after_minutes": str(after_min)}
+    if huy_trailing is not None:
+        g["cancel_trailing_entry"] = str(huy_trailing).lower()
+    cfg.read_dict({"global": g})
     tmp = pathlib.Path(tempfile.mkdtemp())
     def ad(b):
         d = tmp / b; d.mkdir(parents=True, exist_ok=True); return d
@@ -99,6 +102,32 @@ def test_close_position_flag_kept():
     o = {"id": "5", "timestamp": NOW_MS - 999 * 60000, "info": {"closePosition": "true"}}
     ok, _ = M._should_cancel(o, "ATOM/USDT", "open")
     assert ok is False
+
+
+TRAIL_ALGO = {"algoId": "8", "algoType": "CONDITIONAL", "orderType": "TRAILING_STOP_MARKET",
+              "createTime": NOW_MS - 300 * 60000, "reduceOnly": "false", "info": {}}
+TRAIL_THUONG = {"id": "9", "type": "trailing_stop_market", "timestamp": NOW_MS - 300 * 60000,
+                "reduceOnly": False, "info": {"origType": "TRAILING_STOP_MARKET", "reduceOnly": "false"}}
+
+
+def test_trailing_vao_mac_dinh_KHONG_huy_theo_gio():
+    """Bug E: trailing vào chờ kích hoạt hàng giờ là bình thường — huỷ thì hd_order_multi
+    đặt lại ngay vòng sau → huỷ/đặt vòng tròn."""
+    M = _load()
+    for o, kind in ((TRAIL_ALGO, "algo"), (TRAIL_THUONG, "open")):
+        ok, ly_do = M._should_cancel(o, "ARB/USDT", kind)
+        assert ok is False and "TRAILING" in ly_do, (kind, ly_do)
+
+
+def test_trailing_vao_bat_cau_hinh_thi_huy_nhu_cu():
+    M = _load(huy_trailing=True)
+    assert M._should_cancel(TRAIL_ALGO, "ARB/USDT", "algo")[0] is True
+
+
+def test_lenh_vao_limit_cu_van_huy_binh_thuong():
+    M = _load()
+    o = dict(_order(minutes_old=60), type="limit")
+    assert M._should_cancel(o, "ARB/USDT", "open")[0] is True
 
 
 def test_legacy_mode_cancels_everything():

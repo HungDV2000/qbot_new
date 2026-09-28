@@ -450,22 +450,61 @@ def goi_y_sltp_cho_dong(row_ai):
 
 def doc_anh_cu_cho_va_khop():
     """
-    Đọc A–P NGAY TRƯỚC khi xoá A–I, để biết J–P đang thuộc mã nào.
+    Đọc A–Q NGAY TRƯỚC khi ghi, để biết J–P đang thuộc mã nào và bảng cũ dài bao
+    nhiêu dòng (để ghi đè ô trống lên phần thừa thay vì xoá trước).
     Đọc dạng FORMULA: số giữ nguyên độ chính xác (không bị làm tròn theo định
     dạng hiển thị) và ô công thức giữ nguyên công thức khi ghi lại.
     Trả None nếu lỗi → bước sau để nguyên J–P, không dời/không điền.
     """
     try:
-        return gg_sheet_factory.get_cho_va_khop("A4:P1000", value_render_option="FORMULA") or []
+        return gg_sheet_factory.get_cho_va_khop("A4:Q1000", value_render_option="FORMULA") or []
     except Exception as e:
-        logger.warning(f"Không đọc được A4:P1000 trước khi ghi: {e}")
-        print(f"  ⚠️  Không đọc được A–P — lượt này để nguyên J–P: {e}", flush=True)
+        logger.warning(f"Không đọc được A4:Q1000 trước khi ghi: {e}")
+        print(f"  ⚠️  Không đọc được A–Q — lượt này để nguyên J–P: {e}", flush=True)
         return None
 
 
-def ghi_goi_y_sltp(tab_sltp, rows_ai, anh_cu):
+DONG_DAU_CVK = 4          # dòng dữ liệu đầu tiên — hàng 1–3 là tiêu đề của NGƯỜI DÙNG
+DONG_CUOI_CVK = 1000
+
+
+def _dem_du(rows, so_dong, so_cot):
+    """Đệm ma trận tới so_dong dòng × so_cot cột bằng ô trống ("" = xoá ô khi ghi)."""
+    out = [list(r)[:so_cot] + [""] * (so_cot - len(r)) for r in rows]
+    out += [[""] * so_cot for _ in range(so_dong - len(out))]
+    return out
+
+
+def ke_hoach_ghi_cho_va_khop(rows_ai, q_prices, tab_sltp, anh_cu, timestamp_str):
     """
-    Ghi lại cột người dùng J–P sau khi A–I đổi:
+    Dựng MỘT lệnh ghi (values.batchUpdate) cho tab "Chờ và khớp":
+      A2 (giờ quét) · A4:I (trạng thái) · Q4:Q (giá) · J4:P (cột người dùng, nếu cần dời).
+    KHÔNG xoá trước: dòng thừa của bảng cũ được ghi đè bằng ô trống trong cùng lệnh.
+    Trước đây: xoá A4:I1000 + Q4:Q1000 → ghi A2 → ghi A–I → ghi Q → ghi J–P = 6 lệnh
+    rời; lỗi/429 giữa chừng để lại A–I trống còn J–P cũ, vòng sau J–P đó trao nhầm mã.
+    Hàng 1–3 KHÔNG BAO GIỜ bị ghi (trừ A2) — đó là tiêu đề/công thức của người dùng.
+    Trả [(vùng, ma trận)].
+    """
+    n = len(rows_ai)
+    # Không đọc được bảng cũ → không biết dài bao nhiêu → đệm tới hết vùng
+    so_dong = max(n, len(anh_cu)) if anh_cu is not None else DONG_CUOI_CVK - DONG_DAU_CVK + 1
+    so_dong = max(so_dong, 1)
+    cuoi = DONG_DAU_CVK + so_dong - 1
+    data = [
+        ("A2", [[timestamp_str]]),
+        (f"A{DONG_DAU_CVK}:I{cuoi}", _dem_du(rows_ai, so_dong, 9)),
+        (f"Q{DONG_DAU_CVK}:Q{cuoi}", _dem_du(q_prices, so_dong, 1)),
+    ]
+    khoi = khoi_jp_can_ghi(tab_sltp, rows_ai, anh_cu)
+    if khoi:
+        data.append((f"J{DONG_DAU_CVK}:P{DONG_DAU_CVK + len(khoi) - 1}", _dem_du(khoi, len(khoi), 7)))
+    return data
+
+
+def khoi_jp_can_ghi(tab_sltp, rows_ai, anh_cu):
+    """
+    Khối cột người dùng J–P (từ dòng 4) cần ghi lại sau khi A–I đổi, hoặc None nếu
+    không cần ghi:
       • J–M (tick xoá lệnh) và N/O/P (giá SL/TP, cho phép) DỜI THEO MÃ khi thứ
         tự dòng đổi — nếu không, tick/giá của BTC sẽ rơi sang mã khác.
       • N/O/P còn trống thì điền gợi ý — KHÔNG đè số người dùng đã sửa.
@@ -478,7 +517,7 @@ def ghi_goi_y_sltp(tab_sltp, rows_ai, anh_cu):
      không ai gọi — đây là chỗ nối nó vào luồng chạy.)
     """
     if anh_cu is None:
-        return          # không đọc được ảnh cũ → không dám dời/ghi đè
+        return None     # không đọc được ảnh cũ → không dám dời/ghi đè
     dien = bool(cst.fill_default_cho_va_khop)
     if not dien:
         print("  ⏭️  fill_default_cho_va_khop = false → không điền gợi ý N/O/P", flush=True)
@@ -486,12 +525,11 @@ def ghi_goi_y_sltp(tab_sltp, rows_ai, anh_cu):
     khoi, co_doi, so_doi_cho = cot_nguoi_dung.can_chinh(anh_cu, rows_ai, tab_sltp, dien)
     if not co_doi:
         print("  ✔️  Cột J–P không cần đổi", flush=True)
-        return
-
-    gg_sheet_factory.update_multi(gg_sheet_factory.tab_cho_va_khop, 2, khoi, "J")
+        return None
     print(f"  ✍️  Cột J–P: ghi {len(khoi)} dòng, dời theo mã {so_doi_cho} dòng "
           f"(số người dùng đã sửa được giữ nguyên)", flush=True)
     logger.info(f"J–P: ghi {len(khoi)} dòng, dời theo mã {so_doi_cho}")
+    return khoi
 
 
 def build_cho_va_khop_row(
@@ -1014,30 +1052,19 @@ def do_it():
     logger.info(f"Tổng dòng dữ liệu: {len(tab_100_ma_2d_arr)} (ĐÓNG: {len(closed_list)})")
     
     try:
-        # Chụp A–P TRƯỚC khi xoá: để J–P (của người dùng) dời theo đúng mã
+        # Chụp A–Q TRƯỚC khi ghi: để J–P (của người dùng) dời theo đúng mã
         anh_cu = doc_anh_cu_cho_va_khop()
 
-        # Clear A–I + Q; cột J–P (user) không xoá — chỉ dời theo mã ở bước cuối
-        print("  🗑️  Xóa vùng A4:I1000 và Q4:Q1000 trước khi ghi...", flush=True)
-        gg_sheet_factory.clear_multi(gg_sheet_factory.tab_cho_va_khop, 2, "a", end_row=1000, end_column="I")
-        gg_sheet_factory.clear_multi(gg_sheet_factory.tab_cho_va_khop, 2, "Q", end_row=1000, end_column="Q")
-
         timestamp_str = current_time.strftime("%Y-%m-%d %H:%M:%S")
-        print(f"  📅 Cập nhật timestamp vào A2: {timestamp_str}", flush=True)
-        gg_sheet_factory.update_single_value(gg_sheet_factory.tab_cho_va_khop, "A2", timestamp_str)
-
-        print(f"  ✍️  Ghi dữ liệu A–I vào sheet {gg_sheet_factory.spreadsheetId} "
-              f"· tab '{gg_sheet_factory.tab_cho_va_khop}'", flush=True)
-        gg_sheet_factory.update_multi(gg_sheet_factory.tab_cho_va_khop, 2, tab_100_ma_2d_arr, "a")
-
-        if tab_q_prices:
-            print(f"  ✍️  Ghi cột Q (giá hiện tại) — {len(tab_q_prices)} dòng...", flush=True)
-            gg_sheet_factory.update_multi(gg_sheet_factory.tab_cho_va_khop, 2, tab_q_prices, "Q")
-
-        # Gợi ý SL/TP vào N/O/P — chỉ điền ô trống, không đè số người dùng sửa.
-        # Không có bước này thì N/O/P luôn trống → hd_order_multi bỏ qua mọi
-        # dòng → vị thế mở mà KHÔNG CÓ CẮT LỖ.
-        ghi_goi_y_sltp(tab_sltp, tab_100_ma_2d_arr, anh_cu)
+        # A2 + A–I + Q + J–P trong MỘT lệnh, KHÔNG xoá trước. Gợi ý SL/TP vào N/O/P
+        # chỉ điền ô trống, không đè số người dùng sửa — thiếu bước này thì N/O/P
+        # luôn trống → hd_order_multi bỏ qua mọi dòng → vị thế KHÔNG CÓ CẮT LỖ.
+        ke_hoach = ke_hoach_ghi_cho_va_khop(tab_100_ma_2d_arr, tab_q_prices, tab_sltp,
+                                            anh_cu, timestamp_str)
+        print(f"  ✍️  Ghi A2 ({timestamp_str}) + A–I + Q"
+              f"{' + J–P' if len(ke_hoach) > 3 else ''} vào sheet {gg_sheet_factory.spreadsheetId} "
+              f"· tab '{gg_sheet_factory.tab_cho_va_khop}' (1 lệnh)", flush=True)
+        gg_sheet_factory.batch_update_values(gg_sheet_factory.tab_cho_va_khop, ke_hoach)
 
         print(f"✅ Hoàn thành! Đã cập nhật {len(tab_100_ma_2d_arr)} dòng (A–I + cột Q)", flush=True)
         logger.info(f"✅ Hoàn thành cập nhật sheet {gg_sheet_factory.spreadsheetId} "

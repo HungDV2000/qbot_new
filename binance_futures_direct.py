@@ -313,16 +313,23 @@ def cancel_algo_orders(symbol: str = ''):
         return 0, -1
     huy = loi = 0
     for a in ds:
-        try:
-            r = futures_signed_request('DELETE', '/fapi/v1/algoOrder',
-                                       {'symbol': a.get('symbol') or ma, 'algoId': a.get('algoId')},
-                                       max_retries=2)
-        except Exception as e:
-            r = None
-            logger.error(f'[ALGO] Lỗi huỷ algo {a.get("algoId")} {a.get("symbol")}: {e}')
-        if isinstance(r, dict) and (str(r.get('code', '')) == '200' or r.get('algoId') is not None):
+        if cancel_algo_order(a.get('symbol') or ma, a.get('algoId')):
             huy += 1
         else:
             loi += 1
-            logger.warning(f'[ALGO] Không huỷ được algo {a.get("algoId")} {a.get("symbol")}: {r}')
     return huy, loi
+
+
+def cancel_algo_order(symbol: str, algo_id) -> bool:
+    """Huỷ ĐÚNG MỘT lệnh điều kiện (Algo API) theo algoId. True nếu Binance xác nhận."""
+    ma = clean_futures_symbol(symbol) if symbol else ''
+    try:
+        r = futures_signed_request('DELETE', '/fapi/v1/algoOrder',
+                                   {'symbol': ma, 'algoId': algo_id}, max_retries=2)
+    except Exception as e:
+        logger.error(f'[ALGO] Lỗi huỷ algo {algo_id} {ma}: {e}')
+        return False
+    if isinstance(r, dict) and (str(r.get('code', '')) == '200' or r.get('algoId') is not None):
+        return True
+    logger.warning(f'[ALGO] Không huỷ được algo {algo_id} {ma}: {r}')
+    return False
