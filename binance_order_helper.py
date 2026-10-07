@@ -14,9 +14,17 @@ from datetime import datetime
 from pathlib import Path
 
 # --- CẤU HÌNH LOGGING RA FILE binance_order_helper.txt ---
-# Tạo thư mục logs/ nếu chưa có
-logs_dir = Path('logs')
-logs_dir.mkdir(exist_ok=True)
+# Ghi vào logs/<tài khoản>/ như mọi log khác. Trước đây là MỘT file logs/ chung cho
+# mọi tài khoản, không ghi tên tài khoản → 5 tài khoản cùng chạy thì không biết lệnh
+# nào của ai. cst đã nạp trước (bot nào cũng import cst đầu tiên) → lấy từ sys.modules,
+# không import lại.
+import sys as _sys
+_cst = _sys.modules.get('cst')
+if _cst is not None and getattr(_cst, 'account', None):
+    logs_dir = _cst.account_dir('logs')
+else:
+    logs_dir = Path('logs')
+    logs_dir.mkdir(exist_ok=True)
 log_filename = logs_dir / "binance_order_helper.txt"
 
 logger = logging.getLogger(__name__)
