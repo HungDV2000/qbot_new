@@ -181,11 +181,23 @@ def xoa_entry(symbol):
                      [a for a in algo if phan_loai(a, True) == 'ENTRY']), None
 
 
+def _nhac_tick_J(thuong, algo):
+    """K/L không có SL/TP để xoá mà mã còn lệnh VÀO treo → người dùng thường đang muốn
+    xoá lệnh vào (khách 07/10 tick K mãi, lệnh trailing vào vẫn còn) → chỉ sang cột J."""
+    vao = ([_mo_ta(o, False) for o in thuong if phan_loai(o) == 'ENTRY']
+           + [_mo_ta(a, True) for a in algo if phan_loai(a, True) == 'ENTRY'])
+    if not vao:
+        return None
+    return (f"không có SL/TP nào; mã còn {len(vao)} lệnh VÀO treo ({', '.join(vao[:3])}) — "
+            f"K/L KHÔNG xoá lệnh vào, muốn xoá lệnh vào thì tick cột J")
+
+
 def xoa_sl_tp(symbol):
     thuong, algo, _ = _lay_lenh(symbol)
-    return _huy_nhom(symbol,
-                     [o for o in thuong if phan_loai(o) in ('SL', 'TP')],
-                     [a for a in algo if phan_loai(a, True) in ('SL', 'TP')]), None
+    items = _huy_nhom(symbol,
+                      [o for o in thuong if phan_loai(o) in ('SL', 'TP')],
+                      [a for a in algo if phan_loai(a, True) in ('SL', 'TP')])
+    return items, (None if items else _nhac_tick_J(thuong, algo))
 
 
 def xoa_sot(symbol):
@@ -197,7 +209,7 @@ def xoa_sot(symbol):
     if co_sl and co_tp:
         return [], "đang có đủ cả SL và TP — muốn xoá cặp thì tick K"
     if not co_sl and not co_tp:
-        return [], "không còn SL/TP nào trên sàn"
+        return [], _nhac_tick_J(thuong, algo) or "không còn SL/TP nào trên sàn"
     phia = 'SL' if co_sl else 'TP'
     return _huy_nhom(symbol,
                      [o for o in thuong if phan_loai(o) == phia],

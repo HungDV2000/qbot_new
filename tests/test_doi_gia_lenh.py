@@ -106,14 +106,20 @@ def test_bug3_allow_dca_bat_thi_van_dat_them():
     assert len(plans) == 1
 
 
-def test_bug3_canh_bao_telegram_chi_mot_lan_moi_cap_gia():
+def test_bug3_canh_bao_telegram_mot_lan_moi_lenh_cu_du_D_nhay():
+    """Khách 07/10: D là công thức nhảy theo giá (5330 → 5345…) → trước đây 5 phút 1 tin.
+    Nay: 1 tin cho mỗi lệnh cũ; D nhảy tiếp không báo; lệnh cũ KHÁC thì báo; quá 1 giờ nhắc lại."""
     M._DA_CANH_BAO_GIA_D.clear()
     gui = []
+    lenh = dict(_vao_cho(0.13402, oid=111))
     with mock.patch.object(M.telegram_factory, 'send_tele', lambda msg, *a, **k: gui.append(msg)):
-        assert M.canh_bao_gia_d_doi('ARB/USDT', 0.1339, 0.13402)
-        assert not M.canh_bao_gia_d_doi('ARB/USDT', 0.1339, 0.13402)   # vòng sau: không spam
-        assert M.canh_bao_gia_d_doi('ARB/USDT', 0.1337, 0.13402)       # D đổi tiếp → báo lại
-    assert len(gui) == 2 and 'tick cột J' in gui[0]
+        assert M.canh_bao_gia_d_doi('ARB/USDT', 0.1339, 0.13402, lenh)
+        assert not M.canh_bao_gia_d_doi('ARB/USDT', 0.1339, 0.13402, lenh)   # vòng sau
+        assert not M.canh_bao_gia_d_doi('ARB/USDT', 0.1337, 0.13402, lenh)   # D nhảy tiếp
+        assert M.canh_bao_gia_d_doi('ARB/USDT', 0.1337, 0.13500, dict(_vao_cho(0.135, oid=222)))
+        M._DA_CANH_BAO_GIA_D['ARB/USDT'] = (222, M.time.time() - M.NHAC_LAI_GIA_D_GIAY - 1)
+        assert M.canh_bao_gia_d_doi('ARB/USDT', 0.1336, 0.13500, dict(_vao_cho(0.135, oid=222)))
+    assert len(gui) == 3 and 'tick cột J' in gui[0]
 
 
 def test_canh_bao_ghi_du_loai_lenh_id_gio_tao_de_tim_tren_app():

@@ -6,6 +6,7 @@ import logging
 import os
 import sys
 import ccxt
+import time
 from datetime import datetime
 import telegram_factory
 from pathlib import Path
@@ -901,7 +902,10 @@ def _place_order(symbol, p, tag="ORDER"):
         return False
 
 
-_DA_CANH_BAO_GIA_D = {}   # symbol → (giá D, giá lệnh cũ) đã báo — không spam mỗi vòng
+_DA_CANH_BAO_GIA_D = {}   # symbol → (lệnh cũ, lúc báo) — không spam mỗi vòng
+# D là công thức nhảy theo giá (khách 07/10: 5330 → 5345 mỗi vài phút) → nếu báo theo
+# từng giá D mới thì 5 phút 1 tin. Nay báo 1 lần cho mỗi lệnh cũ, nhắc lại sau 1 giờ.
+NHAC_LAI_GIA_D_GIAY = 3600
 
 
 def mo_ta_lenh_treo(s_):
@@ -928,11 +932,14 @@ def tim_lenh_vao(snap, gia):
 
 def canh_bao_gia_d_doi(symbol, gia_moi, gia_cu, lenh=None):
     """Giá cột D đổi mà lệnh vào cũ còn treo → bot KHÔNG tự đặt thêm lệnh (tránh gấp
-    đôi vốn), chỉ báo Telegram MỘT lần cho mỗi cặp giá."""
-    khoa = (gia_moi, gia_cu)
-    if _DA_CANH_BAO_GIA_D.get(symbol) == khoa:
+    đôi vốn), chỉ báo Telegram MỘT lần cho mỗi lệnh cũ (nhắc lại sau NHAC_LAI_GIA_D_GIAY)."""
+    khoa = (lenh or {}).get('id') or gia_cu
+    cu = _DA_CANH_BAO_GIA_D.get(symbol)
+    bay_gio = time.time()
+    if cu and cu[0] == khoa and bay_gio - cu[1] < NHAC_LAI_GIA_D_GIAY:
+        logger.info(f"[{symbol}] giá D {gia_moi} ≠ lệnh vào cũ @ {gia_cu} — đã báo Telegram, chưa nhắc lại")
         return False
-    _DA_CANH_BAO_GIA_D[symbol] = khoa
+    _DA_CANH_BAO_GIA_D[symbol] = (khoa, bay_gio)
     chi_tiet = f" ({mo_ta_lenh_treo(lenh)})" if lenh else ""
     msg = (f"⚠️ [{cst.account_name}] <b>{symbol}</b>: giá D đổi ({gia_cu} → {gia_moi}) nhưng lệnh vào cũ "
            f"@ {gia_cu}{chi_tiet} còn treo — bot KHÔNG đặt thêm. Muốn đổi giá: tick cột J "

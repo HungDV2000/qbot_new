@@ -32,6 +32,8 @@ def algo_sl(aid):    return {"algoId": aid, "algoStatus": "NEW", "algoType": "CO
                              "orderType": "STOP_MARKET", "reduceOnly": False, "closePosition": True}
 def algo_trail(aid): return {"algoId": aid, "algoStatus": "NEW", "algoType": "CONDITIONAL",
                              "orderType": "TRAILING_STOP_MARKET", "reduceOnly": True, "callbackRate": "1"}
+def algo_trail_vao(aid): return {"algoId": aid, "algoStatus": "NEW", "algoType": "CONDITIONAL", "side": "SELL",
+                                 "orderType": "TRAILING_STOP_MARKET", "reduceOnly": False, "callbackRate": "1"}
 
 
 class San:
@@ -178,6 +180,18 @@ class TestXoaTheoTick(unittest.TestCase):
     def test_K_va_L_cung_tick_thi_L_bo_qua(self):
         _, san, _ = self._chay([dong("BTC/USDT", K="TRUE", L="TRUE")], [sl_close("S1"), tp_limit("T1")])
         self.assertEqual(sorted(san.da_huy), ["S1", "T1"])
+
+    def test_K_khong_co_SLTP_ma_con_lenh_vao_thi_chi_sang_J(self):
+        """Khách 07/10: tick K+L mãi để xoá lệnh trailing VÀO → 'đã huỷ 0', không hiểu vì sao."""
+        _, san, sheet = self._chay([dong("BTC/USDT", K="TRUE", L="TRUE")], [], [algo_trail_vao(92)])
+        self.assertEqual(san.da_huy, [], "K/L không được xoá lệnh vào")
+        self.assertIn("tick cột J", sheet.tele[0])
+        self.assertIn("lệnh VÀO", sheet.tele[0])
+
+    def test_L_khong_co_SLTP_ma_con_lenh_vao_thi_chi_sang_J(self):
+        _, san, sheet = self._chay([dong("BTC/USDT", L="TRUE")], [entry("E1")])
+        self.assertEqual(san.da_huy, [])
+        self.assertIn("tick cột J", sheet.tele[0])
 
     def test_M_xoa_tat_ca(self):
         _, san, sheet = self._chay([dong("BTC/USDT", d="ĐÓNG", M="TRUE")],
