@@ -119,6 +119,29 @@ def _khoa_tu_tieu_de(o):
     return None
 
 
+def _ten_cot(i):
+    return chr(ord('A') + i) if i < 26 else f"cột {i + 1}"
+
+
+def _chan_cot_bat_thieu_tieu_de(rows, cot_ten):
+    """
+    Không có cột 'Bật' nhưng có cột TIÊU ĐỀ TRỐNG chứa toàn Y/N → gần như chắc chắn
+    người dùng quên ghi tiêu đề 'Bật'. Cột không tiêu đề bị bỏ qua → MỌI tài khoản
+    bị coi là BẬT. Khách 07/10: B2 trống, công thức xoay vòng Y/N ở cột B vô tác dụng,
+    cả 5 tài khoản cùng bị bật. Dừng hẳn (giữ cấu hình đang chạy) thay vì đoán.
+    """
+    du_lieu = [d for d in rows[2:] if d and cot_ten < len(d) and str(d[cot_ten]).strip()]
+    for i in range(max((len(d) for d in rows), default=0)):
+        if i == cot_ten or (i < len(rows[1]) and str(rows[1][i]).strip()):
+            continue
+        gt = [str(d[i]).strip() for d in du_lieu if i < len(d) and str(d[i]).strip()]
+        if gt and all(_chuan_hoa_nhan(g) in GIA_TRI_BAT | GIA_TRI_TAT for g in gt):
+            raise LoiSheetCauHinh(
+                f"Cột {_ten_cot(i)} có Y/N ({', '.join(gt[:5])}) nhưng ô tiêu đề "
+                f"{_ten_cot(i)}2 TRỐNG → bot không biết đó là cột Bật, sẽ coi MỌI tài "
+                f"khoản là bật. Ghi chữ 'Bật' vào ô {_ten_cot(i)}2.")
+
+
 def phan_tich_bang(rows):
     """
     Bảng thô từ sheet → (phiên_bản, {tên_tài_khoản: {tham_số: giá_trị}}).
@@ -144,6 +167,8 @@ def phan_tich_bang(rows):
             + ', '.join(repr(o) for o in rows[1][:12]))
 
     cot_ten = tieu_de.index('__ten__')
+    if '__bat__' not in tieu_de:
+        _chan_cot_bat_thieu_tieu_de(rows, cot_ten)
     ket_qua, thu_tu = {}, []
 
     for so_dong, dong in enumerate(rows[2:], start=3):

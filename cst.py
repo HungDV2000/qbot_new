@@ -581,6 +581,44 @@ def _pid_alive(pid: int) -> bool:
         return False
 
 
+def _ten_chuong_trinh(pid: int):
+    """Tên file chạy của PID ('python.exe', '/usr/bin/python3'…) hoặc None nếu không đọc được."""
+    try:
+        if os.name == 'nt':
+            import ctypes
+            k32 = ctypes.WinDLL('kernel32', use_last_error=True)
+            h = k32.OpenProcess(0x1000, False, int(pid))    # PROCESS_QUERY_LIMITED_INFORMATION
+            if not h:
+                return None
+            try:
+                buf = ctypes.create_unicode_buffer(1024)
+                n = ctypes.c_ulong(1024)
+                if not k32.QueryFullProcessImageNameW(h, 0, buf, ctypes.byref(n)):
+                    return None
+                return buf.value
+            finally:
+                k32.CloseHandle(h)
+        with open(f'/proc/{int(pid)}/cmdline', 'rb') as f:
+            return f.read().split(b'\0')[0].decode('utf-8', 'replace')
+    except Exception:
+        return None
+
+
+def _pid_cua_bot(pid: int) -> bool:
+    """
+    PID trong file khoá còn là BOT đang chạy không.
+
+    Chỉ "còn sống" chưa đủ: chép cả thư mục bot (khách 07/10: 'qbot_new - Copy') là
+    chép theo file khoá cũ, mà Windows cấp lại PID cũ cho chương trình khác → bot
+    tưởng có bản đang chạy, cả 5 tài khoản không khởi động được. PID sống nhưng
+    KHÔNG phải python → khoá mồ côi. Không đọc được tên → coi là bot (an toàn).
+    """
+    if not _pid_alive(pid):
+        return False
+    ten = _ten_chuong_trinh(pid)
+    return ten is None or 'python' in os.path.basename(ten).lower()
+
+
 def acquire_single_instance_lock(bot_name: str):
     """
     Giữ khoá cho (bot_name + tài khoản). Đang chạy rồi → DỪNG thay vì chạy chồng.
@@ -597,7 +635,7 @@ def acquire_single_instance_lock(bot_name: str):
             old_pid = int(lock_file.read_text().strip() or 0)
         except (ValueError, OSError):
             old_pid = 0
-        if old_pid and old_pid != os.getpid() and _pid_alive(old_pid):
+        if old_pid and old_pid != os.getpid() and _pid_cua_bot(old_pid):
             raise SystemExit(
                 f"\n⛔ {bot_name} ĐANG CHẠY cho tài khoản '{account_name}' (PID {old_pid}).\n"
                 f"   Chạy thêm sẽ ĐẶT LỆNH TRÙNG → không khởi động.\n"

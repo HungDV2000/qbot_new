@@ -263,7 +263,7 @@ def _khoa(ten, pid):
 
 
 def _thu(che_do, song=True):
-    with mock.patch.object(M.cst, '_pid_alive', lambda pid: song, create=True):
+    with mock.patch.object(M.cst, '_pid_cua_bot', lambda pid: song, create=True):
         try:
             M.kiem_tra_xung_dot(che_do)
             return None

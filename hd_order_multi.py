@@ -1649,7 +1649,7 @@ def kiem_tra_xung_dot(che_do):
             pid = int(khoa.read_text().strip() or 0)
         except (OSError, ValueError):
             continue
-        if pid and pid != os.getpid() and cst._pid_alive(pid):
+        if pid and pid != os.getpid() and cst._pid_cua_bot(pid):
             # Bật cùng lúc thì cả hai cùng thấy nhau: chỉ bot giành khoá SAU nhường,
             # bot bật trước chạy tiếp — không để cả hai cùng chết.
             if _moc(khoa, pid) > cua_toi:

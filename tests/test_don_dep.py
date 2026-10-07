@@ -126,5 +126,30 @@ class TestPidAliveWindows(unittest.TestCase):
         self.assertFalse(self._goi("posix", kill=chet))
 
 
+class TestKhoaMoCoi(unittest.TestCase):
+    """Khách 07/10: chép thư mục bot → chép theo file khoá; Windows cấp lại PID cũ cho
+    chương trình khác → bot tưởng đang có bản chạy, không tài khoản nào khởi động."""
+
+    def _thu(self, song, ten):
+        tree = ast.parse(io.open("cst.py", encoding="utf-8").read())
+        fn = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "_pid_cua_bot")
+        ns = {"os": os, "_pid_alive": lambda pid: song, "_ten_chuong_trinh": lambda pid: ten}
+        exec(compile(ast.Module(body=[fn], type_ignores=[]), "cst.py", "exec"), ns)
+        return ns["_pid_cua_bot"](1234)
+
+    def test_pid_cu_nay_la_chuong_trinh_khac_thi_khoa_mo_coi(self):
+        self.assertFalse(self._thu(True, r"C:\Windows\System32\svchost.exe"))
+
+    def test_pid_la_python_thi_van_chan(self):
+        self.assertTrue(self._thu(True, r"C:\Python312\python.exe"))
+        self.assertTrue(self._thu(True, "/usr/bin/python3"))
+
+    def test_khong_doc_duoc_ten_thi_van_chan_cho_an_toan(self):
+        self.assertTrue(self._thu(True, None))
+
+    def test_pid_chet_thi_khong_chan(self):
+        self.assertFalse(self._thu(False, r"C:\Python312\python.exe"))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

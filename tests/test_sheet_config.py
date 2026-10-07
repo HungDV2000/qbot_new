@@ -93,6 +93,23 @@ class TestLocVaKiemTra(unittest.TestCase):
         bang = {"x": {"__ten__": "x"}}
         self.assertIn("x", sc.loc_dang_bat(bang)[0])
 
+    def test_cot_YN_thieu_tieu_de_Bat_thi_DUNG(self):
+        """Khách 07/10: B2 trống, cột B là công thức xoay vòng Y/N → trước đây cả 5
+        tài khoản bị coi là bật."""
+        bang = [list(r) for r in BANG_MAU]
+        bang[1][1] = ""
+        with self.assertRaises(sc.LoiSheetCauHinh) as cm:
+            sc.phan_tich_bang(bang)
+        self.assertIn("B2", str(cm.exception))
+
+    def test_cot_tieu_de_trong_khong_phai_YN_thi_van_bo_qua(self):
+        bang = [list(r) for r in BANG_MAU]
+        bang[1][1] = ""
+        for r in bang[2:]:
+            r[1] = "ghi chú"
+        _, kq = sc.phan_tich_bang(bang)
+        self.assertEqual(len(kq), 3)
+
     def test_thieu_key_thi_bo_dong(self):
         bang = {"x": {"__ten__": "x", "key_binance": "K"}}   # thiếu secret + sheet
         loi = sc.kiem_tra_du_khoa(bang)
