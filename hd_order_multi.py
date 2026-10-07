@@ -909,9 +909,11 @@ def canh_bao_gia_d_doi(symbol, gia_moi, gia_cu):
     if _DA_CANH_BAO_GIA_D.get(symbol) == khoa:
         return False
     _DA_CANH_BAO_GIA_D[symbol] = khoa
-    msg = (f"⚠️ <b>{symbol}</b>: giá D đổi ({gia_cu} → {gia_moi}) nhưng lệnh vào cũ "
+    msg = (f"⚠️ [{cst.account_name}] <b>{symbol}</b>: giá D đổi ({gia_cu} → {gia_moi}) nhưng lệnh vào cũ "
            f"@ {gia_cu} còn treo — bot KHÔNG đặt thêm. Muốn đổi giá: tick cột J "
-           f"(tab Chờ và khớp) để xoá lệnh cũ, vòng sau bot đặt lại theo giá D mới.")
+           f"(tab Chờ và khớp) để xoá lệnh cũ, vòng sau bot đặt lại theo giá D mới. "
+           f"Không thấy lệnh trên app → chạy: python tests/soi_lenh_cho.py "
+           f"{cst.account_name} {symbol.split('/')[0]}")
     print(msg, flush=True)
     logger.warning(msg)
     try:
