@@ -116,6 +116,19 @@ def test_bug3_canh_bao_telegram_chi_mot_lan_moi_cap_gia():
     assert len(gui) == 2 and 'tick cột J' in gui[0]
 
 
+def test_canh_bao_ghi_du_loai_lenh_id_gio_tao_de_tim_tren_app():
+    """Khách 07/10: bot báo 'lệnh cũ @ 5265 còn treo' mà không thấy trên app — tin chỉ có
+    giá, không biết tìm lệnh gì. Nay ghi loại lệnh, chiều, KL, nhóm (điều kiện/thường), id, giờ tạo."""
+    M._DA_CANH_BAO_GIA_D.clear()
+    gui = []
+    lenh = dict(_vao_cho(5291.0, oid=4000001952112211), side='sell', amount=7.3,
+                kieu='TRAILING_STOP_MARKET', tao=1791338843000)
+    with mock.patch.object(M.telegram_factory, 'send_tele', lambda msg, *a, **k: gui.append(msg)):
+        M.canh_bao_gia_d_doi('BTCDOM/USDT:USDT', 5277.7, 5291.0, M.tim_lenh_vao([lenh], 5291.0))
+    for can in ('TRAILING_STOP_MARKET SELL', 'KL 7.3', 'ĐIỀU KIỆN', 'id=4000001952112211', 'tạo '):
+        assert can in gui[0], (can, gui[0])
+
+
 # ════════════════════════════════════════════════════════════════════════════
 #  BUG 4 — đổi giá SL/TP ở cột N/O
 # ════════════════════════════════════════════════════════════════════════════

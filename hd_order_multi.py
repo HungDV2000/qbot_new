@@ -597,6 +597,7 @@ def build_symbol_snapshot(symbol, need_algo):
             'id': o.get('id'),
             'close_position': cp,
             'algo': False,
+            'tao': o.get('timestamp') or info.get('time'),
         })
     algo_ok = True
     if need_algo:
@@ -630,7 +631,8 @@ def build_symbol_snapshot(symbol, need_algo):
                 snap.append({'family': fam, 'loai': phan_loai(a, True), 'side': str(a.get('side', '')).lower(),
                              'reduce_only': bool(ro) or cp, 'price': ap,
                              'amount': kl or None, 'id': a.get('algoId'), 'close_position': cp,
-                             'algo': True})
+                             'algo': True, 'tao': a.get('createTime'),
+                             'kieu': kieu_lenh or 'TRAILING_STOP_MARKET'})
     return snap, algo_ok
 
 # Dung sai coi 2 lệnh là "cùng một giá" khi chống trùng.
@@ -902,15 +904,38 @@ def _place_order(symbol, p, tag="ORDER"):
 _DA_CANH_BAO_GIA_D = {}   # symbol → (giá D, giá lệnh cũ) đã báo — không spam mỗi vòng
 
 
-def canh_bao_gia_d_doi(symbol, gia_moi, gia_cu):
+def mo_ta_lenh_treo(s_):
+    """'TRAILING_STOP_MARKET SELL KL 7.3 · lệnh điều kiện id=… · tạo 07/10 09:07' — đủ để
+    tìm đúng lệnh trên app (lệnh điều kiện nằm ở mục khác lệnh limit thường)."""
+    if not s_:
+        return ''
+    kieu = s_.get('kieu') or str(s_.get('family', '')).upper()
+    nhom = 'lệnh ĐIỀU KIỆN (trailing/stop)' if s_.get('algo') else 'lệnh thường'
+    tao = ''
+    try:
+        tao = ' · tạo ' + datetime.fromtimestamp(float(s_['tao']) / 1000).strftime('%d/%m %H:%M')
+    except (KeyError, TypeError, ValueError):
+        pass
+    return (f"{kieu} {str(s_.get('side', '')).upper()} KL {s_.get('amount')} · {nhom} "
+            f"id={s_.get('id')}{tao}")
+
+
+def tim_lenh_vao(snap, gia):
+    """Lệnh vào đang treo ở đúng giá này (để mô tả trong cảnh báo)."""
+    ds = lenh_vao_dang_cho(snap)
+    return next((s_ for s_ in ds if _cung_gia(s_.get('price'), gia)), ds[0] if ds else None)
+
+
+def canh_bao_gia_d_doi(symbol, gia_moi, gia_cu, lenh=None):
     """Giá cột D đổi mà lệnh vào cũ còn treo → bot KHÔNG tự đặt thêm lệnh (tránh gấp
     đôi vốn), chỉ báo Telegram MỘT lần cho mỗi cặp giá."""
     khoa = (gia_moi, gia_cu)
     if _DA_CANH_BAO_GIA_D.get(symbol) == khoa:
         return False
     _DA_CANH_BAO_GIA_D[symbol] = khoa
+    chi_tiet = f" ({mo_ta_lenh_treo(lenh)})" if lenh else ""
     msg = (f"⚠️ [{cst.account_name}] <b>{symbol}</b>: giá D đổi ({gia_cu} → {gia_moi}) nhưng lệnh vào cũ "
-           f"@ {gia_cu} còn treo — bot KHÔNG đặt thêm. Muốn đổi giá: tick cột J "
+           f"@ {gia_cu}{chi_tiet} còn treo — bot KHÔNG đặt thêm. Muốn đổi giá: tick cột J "
            f"(tab Chờ và khớp) để xoá lệnh cũ, vòng sau bot đặt lại theo giá D mới. "
            f"Không thấy lệnh trên app → chạy: python tests/soi_lenh_cho.py "
            f"{cst.account_name} {symbol.split('/')[0]}")
@@ -1338,7 +1363,7 @@ def _do_entry_phase(mot_lenh_vao_moi_ma=False):
                               if l['role'] == 'entry'), None)
                 gia_cu = lenh_vao_dang_cho(snap)[0].get('price')
                 if gia_d is not None and not _cung_gia(gia_cu, gia_d):
-                    canh_bao_gia_d_doi(symbol, gia_d, gia_cu)
+                    canh_bao_gia_d_doi(symbol, gia_d, gia_cu, tim_lenh_vao(snap, gia_cu))
                 continue
             has_pos = (pos_amt != 0)
             exit_side = "sell" if pos_amt > 0 else "buy"
@@ -1378,7 +1403,7 @@ def _do_entry_phase(mot_lenh_vao_moi_ma=False):
             for leg_idx, reason in skips:
                 logger.info(f"[{symbol}] leg{leg_idx} bỏ qua: {reason}")
             for _leg, gia_moi, gia_cu in canh_bao:
-                canh_bao_gia_d_doi(symbol, gia_moi, gia_cu)
+                canh_bao_gia_d_doi(symbol, gia_moi, gia_cu, tim_lenh_vao(snap, gia_cu))
 
             # --- Thực thi: huỷ lệnh cũ (SL/TP dời giá) rồi đặt ---
             huy_lenh_cu_roi_dat(symbol, snap, can_huy, plans, tag="ENTRY")
