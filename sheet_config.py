@@ -127,7 +127,7 @@ def _chan_cot_bat_thieu_tieu_de(rows, cot_ten):
     """
     Không có cột 'Bật' nhưng có cột TIÊU ĐỀ TRỐNG chứa toàn Y/N → gần như chắc chắn
     người dùng quên ghi tiêu đề 'Bật'. Cột không tiêu đề bị bỏ qua → MỌI tài khoản
-    bị coi là BẬT. Khách 07/10: B2 trống, công thức xoay vòng Y/N ở cột B vô tác dụng,
+    bị coi là BẬT — sai khi có dòng N (toàn Y thì vô hại, cho chạy). Khách 07/10: B2 trống, công thức xoay vòng Y/N ở cột B vô tác dụng,
     cả 5 tài khoản cùng bị bật. Dừng hẳn (giữ cấu hình đang chạy) thay vì đoán.
     """
     du_lieu = [d for d in rows[2:] if d and cot_ten < len(d) and str(d[cot_ten]).strip()]
@@ -135,11 +135,15 @@ def _chan_cot_bat_thieu_tieu_de(rows, cot_ten):
         if i == cot_ten or (i < len(rows[1]) and str(rows[1][i]).strip()):
             continue
         gt = [str(d[i]).strip() for d in du_lieu if i < len(d) and str(d[i]).strip()]
-        if gt and all(_chuan_hoa_nhan(g) in GIA_TRI_BAT | GIA_TRI_TAT for g in gt):
+        chuan = [_chuan_hoa_nhan(g) for g in gt]
+        # Toàn Y thì bỏ qua cột này cũng ra đúng kết quả (mọi tài khoản bật) → cho chạy.
+        # Chỉ chặn khi có N: người dùng muốn TẮT mà bot lại bật.
+        if (gt and all(c in GIA_TRI_BAT | GIA_TRI_TAT for c in chuan)
+                and any(c in GIA_TRI_TAT for c in chuan)):
             raise LoiSheetCauHinh(
                 f"Cột {_ten_cot(i)} có Y/N ({', '.join(gt[:5])}) nhưng ô tiêu đề "
-                f"{_ten_cot(i)}2 TRỐNG → bot không biết đó là cột Bật, sẽ coi MỌI tài "
-                f"khoản là bật. Ghi chữ 'Bật' vào ô {_ten_cot(i)}2.")
+                f"{_ten_cot(i)}2 TRỐNG → bot không biết đó là cột Bật, sẽ BẬT cả tài "
+                f"khoản đang N. Ghi chữ 'Bật' vào ô {_ten_cot(i)}2.")
 
 
 def phan_tich_bang(rows):

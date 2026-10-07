@@ -102,6 +102,14 @@ class TestLocVaKiemTra(unittest.TestCase):
             sc.phan_tich_bang(bang)
         self.assertIn("B2", str(cm.exception))
 
+    def test_cot_toan_Y_thieu_tieu_de_thi_van_chay(self):
+        """Khách 07/10: B2 trống, B3:B7 toàn Y → kết quả vẫn đúng (bật hết), không chặn."""
+        bang = [list(r) for r in BANG_MAU]
+        bang[1][1] = ""
+        bang[4][1] = "Y"
+        _, kq = sc.phan_tich_bang(bang)
+        self.assertEqual(len(kq), 3)
+
     def test_cot_tieu_de_trong_khong_phai_YN_thi_van_bo_qua(self):
         bang = [list(r) for r in BANG_MAU]
         bang[1][1] = ""
