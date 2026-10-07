@@ -24,7 +24,10 @@ TEN_BOT = os.path.splitext(os.path.basename(sys.argv[0] if sys.argv else ''))[0]
 if TEN_BOT not in ('hd_order', 'hd_order_123'):
     TEN_BOT = 'hd_order_multi'
 file_name = TEN_BOT + '.py'
-os.system(f"title {file_name} - {cst.key_name}")
+# Tiến trình con của điều phối dùng CHUNG cửa sổ với cha → đổi tiêu đề là cửa sổ cha
+# mang tên tài khoản con mở sau cùng (khách tưởng cửa sổ chỉ chạy 1 tài khoản).
+if os.environ.get('QBOT_SUPERVISED', '') != '1':
+    os.system(f"title {file_name} - {cst.key_name}")
 
 # Tạo thư mục logs/ nếu chưa có
 logs_dir = cst.account_dir('logs')  # [MULTI-ACC] tách theo tài khoản

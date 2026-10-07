@@ -80,6 +80,29 @@ def _hook(loai, loi, tb):
     _hook_goc(loai, loi, tb)        # in lỗi ra màn hình TRƯỚC khi chờ Enter
 
 
+def tat_quick_edit():
+    """
+    Tắt QuickEdit của cửa sổ CMD. Khách 07/10: lỡ click vào cửa sổ → tiêu đề thành
+    "Select …", Windows CHẶN mọi lệnh ghi ra màn hình → bot ĐỨNG HẲN (không quét, không
+    đặt cắt lỗ) cho tới khi bấm Esc. Tắt QuickEdit thì click không làm đơ nữa
+    (bôi chọn để copy vẫn được: chuột phải → Mark).
+    """
+    if os.name != 'nt':
+        return False
+    try:
+        import ctypes
+        k32 = ctypes.WinDLL('kernel32', use_last_error=True)
+        h = k32.GetStdHandle(-10)                       # STD_INPUT_HANDLE
+        mode = ctypes.c_ulong()
+        if not h or not k32.GetConsoleMode(h, ctypes.byref(mode)):
+            return False                                # không có cửa sổ console
+        moi = (mode.value & ~0x0040) | 0x0080           # bỏ QUICK_EDIT, giữ EXTENDED_FLAGS
+        return bool(k32.SetConsoleMode(h, moi))
+    except Exception:
+        return False
+
+
+tat_quick_edit()
 sys.excepthook = _hook
 try:
     signal.signal(signal.SIGINT, _nhan_ctrl_c)

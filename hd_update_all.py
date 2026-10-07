@@ -26,7 +26,10 @@ import gg_sheet_factory
 from binance_futures_direct import futures_signed_request
 
 file_name = os.path.basename(os.path.abspath(__file__))
-os.system(f"title {file_name} - {cst.key_name}")
+# Tiến trình con của điều phối dùng CHUNG cửa sổ với cha → đổi tiêu đề là cửa sổ cha
+# mang tên tài khoản con mở sau cùng (khách tưởng cửa sổ chỉ chạy 1 tài khoản).
+if os.environ.get('QBOT_SUPERVISED', '') != '1':
+    os.system(f"title {file_name} - {cst.key_name}")
 
 logs_dir = cst.account_dir('logs')  # [MULTI-ACC] tách theo tài khoản
 logs_dir.mkdir(exist_ok=True)

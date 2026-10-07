@@ -18,7 +18,10 @@ from binance_symbol_row import fetch_all_tickers_24h, get_sheet_col_c_price
 from phan_loai_lenh import la_lenh_dong, mo_ta as mo_ta_lenh, phan_loai
 
 file_name = os.path.basename(os.path.abspath(__file__))  
-os.system(f"title {file_name} - {cst.key_name}")
+# Tiến trình con của điều phối dùng CHUNG cửa sổ với cha → đổi tiêu đề là cửa sổ cha
+# mang tên tài khoản con mở sau cùng (khách tưởng cửa sổ chỉ chạy 1 tài khoản).
+if os.environ.get('QBOT_SUPERVISED', '') != '1':
+    os.system(f"title {file_name} - {cst.key_name}")
 
 # Tạo thư mục logs/ nếu chưa có
 logs_dir = cst.account_dir('logs')  # [MULTI-ACC] tách theo tài khoản

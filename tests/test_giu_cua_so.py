@@ -156,5 +156,51 @@ class TestMoiBotDeuGiu(unittest.TestCase):
                         "🔴 kiem_tra_cau_hinh báo lỗi rồi cửa sổ đóng mất")
 
 
+class TestTatQuickEdit(unittest.TestCase):
+    """Khách 07/10: click vào cửa sổ CMD → 'Select …' → bot ĐỨNG HẲN. Bot phải tự tắt QuickEdit."""
+
+    def _goi(self, ten_os, mode=0x01F7, co_console=True):
+        import types
+        from unittest import mock
+        tree = ast.parse(io.open(QBOT / "giu_cua_so.py", encoding="utf-8").read())
+        fn = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "tat_quick_edit")
+        dat = []
+
+        class K32:
+            def GetStdHandle(self, n): return 5
+            def GetConsoleMode(self, h, ref): ref.value = mode; return 1 if co_console else 0
+            def SetConsoleMode(self, h, m): dat.append(m); return 1
+
+        class CUlong:
+            def __init__(self): self.value = 0
+        fake = types.SimpleNamespace(WinDLL=lambda *a, **k: K32(), c_ulong=CUlong, byref=lambda x: x)
+        ns = {"os": types.SimpleNamespace(name=ten_os)}
+        exec(compile(ast.Module(body=[fn], type_ignores=[]), "giu_cua_so.py", "exec"), ns)
+        with mock.patch.dict(sys.modules, {"ctypes": fake}):
+            return ns["tat_quick_edit"](), dat
+
+    def test_windows_bo_co_quick_edit(self):
+        ok, dat = self._goi("nt")
+        self.assertTrue(ok)
+        self.assertFalse(dat[0] & 0x40, "🔴 QuickEdit vẫn bật → click là bot đơ")
+        self.assertTrue(dat[0] & 0x80)
+        self.assertEqual(dat[0] | 0x40, 0x01F7 | 0x80, "không được đụng các cờ khác")
+
+    def test_khong_co_console_thi_bo_qua(self):
+        ok, dat = self._goi("nt", co_console=False)
+        self.assertFalse(ok); self.assertEqual(dat, [])
+
+    def test_ngoai_windows_khong_lam_gi(self):
+        ok, dat = self._goi("posix")
+        self.assertFalse(ok); self.assertEqual(dat, [])
+
+    def test_moi_bot_dat_tieu_de_chi_khi_chay_le(self):
+        for f in ("hd_order_multi.py", "hd_update_cho_va_khop.py", "hd_alert_possition_and_open_order.py",
+                  "hd_cancel_selective.py", "hd_cancel_orders_schedule.py", "hd_update_all.py"):
+            src = io.open(QBOT / f, encoding="utf-8").read()
+            with self.subTest(f=f):
+                self.assertIn("if os.environ.get('QBOT_SUPERVISED', '') != '1':\n    os.system(f\"title", src)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
