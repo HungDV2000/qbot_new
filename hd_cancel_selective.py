@@ -83,6 +83,7 @@ except Exception:
 DONG_DAU = 4
 VUNG_DOC = "A4:P1000"
 VUNG_TIM_LAI = "A4:B1000"
+VUNG_KIEM_TICK = "A4:M1000"
 COT_TICK = (("J", 9), ("K", 10), ("L", 11), ("M", 12))
 TEN_COT = {"J": "XOÁ ENTRY", "K": "XOÁ SL/TP", "L": "XOÁ LỆNH SÓT", "M": "XOÁ TẤT CẢ"}
 GIA_TRI_TICK = {"Y", "YES", "TRUE", "1", "X", "TICK", "✓", "✔"}
@@ -92,6 +93,10 @@ GIA_TRI_TICK = {"Y", "YES", "TRUE", "1", "X", "TICK", "✓", "✔"}
 #     (tick J lần 2 sẽ xoá cả lệnh vào mới đặt sau đó).
 #   • Đã xoá tick mà tick hiện lại trong CHAN_LAP_GIAY → là tick "ma" do
 #     hd_update_cho_va_khop ghi lại J–P từ ảnh chụp cũ → chỉ xoá tick.
+#   • "ket": xoá xong đọc lại mà tick VẪN CÒN → ô do công thức/IMPORTRANGE tràn vào,
+#     xoá giá trị không ăn. Khách 07/10: K4/L4 = Y kẹt → bot chạy lại tick K mỗi 4 phút
+#     (180s chặn lặp + 1 vòng) — vô hại khi chưa có SL/TP, nhưng có SL/TP là xoá cắt lỗ
+#     liên tục. Nay tick kẹt KHÔNG BAO GIỜ chạy lại cho tới khi ô trống.
 CHAN_LAP_GIAY = 180
 _vua_xu_ly = {}
 
@@ -272,6 +277,53 @@ def _xoa_tick(o_can_xoa):
         return False
 
 
+def _o_van_con_tick(o_list):
+    """Đọc lại các ô vừa xoá tick → danh sách ô VẪN còn tick. None nếu đọc lỗi."""
+    try:
+        rows = gg_sheet_factory.get_cho_va_khop(VUNG_KIEM_TICK) or []
+    except Exception as e:
+        logger.error(f"Không đọc lại được tick sau khi xoá: {e}")
+        return None
+    con = []
+    for o in o_list:
+        i, j = int(o[1:]) - DONG_DAU, "JKLM".index(o[0]) + 9
+        row = rows[i] if 0 <= i < len(rows) else []
+        if j < len(row) and has_delete_tick(row[j]):
+            con.append(o)
+    return con
+
+
+def _danh_dau_ket(o_va_khoa):
+    """o_va_khoa: [(ô, khoá dòng, cột)] vừa xoá tick. Ô nào xoá không ăn → đánh dấu kẹt.
+    Trả danh sách ô kẹt MỚI (để báo Telegram một lần)."""
+    con = _o_van_con_tick([o for o, _, _ in o_va_khoa])
+    if not con:
+        return []
+    moi = []
+    for o, k, c in o_va_khoa:
+        e = _vua_xu_ly.get((k, c))
+        if o in con and e is not None:
+            if not e.get("ket"):
+                moi.append(o)
+            e["ket"] = True
+    if moi:
+        logger.warning(f"Tick kẹt (xoá không ăn): {moi} — sẽ không chạy lại cho tới khi ô trống")
+        print(f"   ⚠️  Tick kẹt {', '.join(moi)} — ô do công thức điền, bot không chạy lại", flush=True)
+    return moi
+
+
+def _bao_tick_ket(o_ket):
+    msg = (f"⚠️ <b>TICK KẸT</b> — {cst.key_name}\n"
+           f"Ô <b>{', '.join(o_ket)}</b> (tab Chờ và khớp): bot đã xoá tick nhưng tick hiện lại ngay — "
+           f"ô này đang được CÔNG THỨC / IMPORTRANGE điền (thường do công thức ở hàng 1–3 tràn xuống).\n"
+           f"Bot sẽ KHÔNG chạy lại tick này (tránh xoá lệnh lặp đi lặp lại). "
+           f"Sửa: bỏ công thức tràn vào cột J–M từ dòng 4, rồi tick lại bằng tay khi cần.")
+    try:
+        telegram_factory.send_tele(msg, cst.chat_id, True, True)
+    except Exception as e:
+        logger.error(f"Lỗi gửi Telegram: {e}")
+
+
 def _gui_bao_cao(bao_cao):
     khoi = []
     tong = 0
@@ -308,14 +360,17 @@ def xu_ly_mot_vong():
 
     con_tick = {(k, c) for _, k, _, _, cols in cac_dong for c in cols}
     for kc, e in list(_vua_xu_ly.items()):
-        if kc not in con_tick and (not e["da_xoa_tick"] or bay_gio - e["t"] >= CHAN_LAP_GIAY):
-            del _vua_xu_ly[kc]      # người dùng tự bỏ tick / mã rời bảng / hết hạn chặn lặp
+        if kc not in con_tick and (e.get("ket") or not e["da_xoa_tick"] or bay_gio - e["t"] >= CHAN_LAP_GIAY):
+            del _vua_xu_ly[kc]      # người dùng tự bỏ tick / mã rời bảng / hết hạn chặn lặp / hết kẹt
 
     viec, chi_xoa_tick = [], []
     for so_dong, k, ma, d, cols in cac_dong:
         moi = []
         for c in cols:
             e = _vua_xu_ly.get((k, c))
+            if e is not None and e.get("ket"):
+                logger.info(f"{ma} {c}{so_dong}: tick kẹt (ô do công thức điền) — bỏ qua")
+                continue
             if e is None or (e["da_xoa_tick"] and bay_gio - e["t"] >= CHAN_LAP_GIAY):
                 moi.append(c)
             else:
@@ -324,11 +379,15 @@ def xu_ly_mot_vong():
         if moi:
             viec.append((so_dong, k, ma, d, moi))
 
+    o_ket = []
     if chi_xoa_tick and _xoa_tick([o for _, _, o in chi_xoa_tick]):
         for k, c, _ in chi_xoa_tick:
             _vua_xu_ly[(k, c)]["da_xoa_tick"] = True
+        o_ket += _danh_dau_ket([(o, k, c) for k, c, o in chi_xoa_tick])
 
     if not viec:
+        if o_ket:
+            _bao_tick_ket(o_ket)
         print(f"[{datetime.now():%H:%M:%S}] ℹ️  Không có tick xoá mới", flush=True)
         return
 
@@ -370,6 +429,8 @@ def xu_ly_mot_vong():
             if bc["dong_moi"] is not None:
                 for c in bc["cols"]:
                     _vua_xu_ly[(bc["khoa"], c)]["da_xoa_tick"] = True
+        o_ket += _danh_dau_ket([(f"{c}{bc['dong_moi']}", bc["khoa"], c)
+                                for bc in bao_cao if bc["dong_moi"] is not None for c in bc["cols"]])
 
     for bc in bao_cao:
         if bc["dong_moi"] is None:
@@ -383,6 +444,8 @@ def xu_ly_mot_vong():
             logger.error(f"Lỗi cập nhật G/H/I dòng {bc['dong_moi']}: {e}")
 
     _gui_bao_cao(bao_cao)
+    if o_ket:
+        _bao_tick_ket(o_ket)
 
 
 def xu_ly_an_toan():

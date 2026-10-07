@@ -46,10 +46,13 @@ class Sheet:
         s.bang, s.bang_sau = bang, None
         s.xoa, s.ghi, s.tele = [], [], []
         s.loi_xoa = False
+        s.ket = set()           # ô do công thức điền: xoá không ăn (IMPORTRANGE tràn)
 
     def get(s, rng, value_render_option=None):
         if rng == "A4:B1000" and s.bang_sau is not None:
             return [r[:2] for r in s.bang_sau]
+        if rng == "A4:M1000" and s.bang_sau is not None:
+            return s.bang_sau
         return s.bang
 
     def clear(s, tab, ranges):
@@ -58,7 +61,8 @@ class Sheet:
         s.xoa.extend(ranges)
         b = s.bang_sau if s.bang_sau is not None else s.bang
         for r in ranges:
-            b[int(r[1:]) - 4]["JKLM".index(r[0]) + 9] = ""
+            if r not in s.ket:
+                b[int(r[1:]) - 4]["JKLM".index(r[0]) + 9] = ""
 
     def update_multi(s, tab, idx, arr, col):
         s.ghi.append((idx, col, arr))
@@ -255,6 +259,27 @@ class TestKhongXoaLan2(unittest.TestCase):
         M.xu_ly_mot_vong()
         self.assertEqual(san.da_huy, ["S1"], "🔴 tick ma làm xoá cắt lỗ lần 2")
         self.assertEqual(sheet.xoa, ["K4", "K4"])
+
+    def test_tick_ket_do_cong_thuc_thi_khong_bao_gio_chay_lai(self):
+        """Khách 07/10: K4/L4 do IMPORTRANGE điền → xoá không ăn → trước đây cứ ~4 phút
+        bot chạy lại tick K. Có SL/TP thật thì sẽ xoá cắt lỗ liên tục."""
+        san, sheet = San(), Sheet([dong("BTC/USDT", K="TRUE")])
+        sheet.ket = {"K4"}
+        M = _nap(san, sheet)
+        M.xu_ly_mot_vong()
+        self.assertTrue(any("TICK KẸT" in t and "K4" in t for t in sheet.tele), sheet.tele)
+        san.thuong[BTC] = [sl_close("S1"), tp_limit("T1")]   # lệnh vào khớp, bot đặt SL/TP
+        for kc in M._vua_xu_ly.values():
+            kc["t"] -= M.CHAN_LAP_GIAY + 1                    # hết hạn chặn lặp
+        so_tin = len(sheet.tele)
+        M.xu_ly_mot_vong(); M.xu_ly_mot_vong()
+        self.assertEqual(san.da_huy, [], "🔴 tick kẹt xoá mất cắt lỗ/chốt lời")
+        self.assertEqual(len(sheet.tele), so_tin, "tick kẹt chỉ báo MỘT lần")
+        sheet.bang[0][10] = ""                                # người dùng gỡ công thức
+        M.xu_ly_mot_vong()
+        sheet.bang[0][10] = "TRUE"; sheet.ket = set()         # tick lại bằng tay
+        M.xu_ly_mot_vong()
+        self.assertEqual(sorted(san.da_huy), ["S1", "T1"], "hết kẹt thì tick mới chạy bình thường")
 
     def test_tick_lai_sau_han_chan_thi_xu_ly_binh_thuong(self):
         san, sheet = San(), Sheet([dong("BTC/USDT", J="TRUE")])
