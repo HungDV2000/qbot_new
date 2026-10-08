@@ -33,7 +33,7 @@ Soát cấu hình trước khi bật (không đặt lệnh): `python kiem_tra_ca
 
 | Bot | Việc | Bắt buộc? |
 |---|---|---|
-| `hd_update_cho_va_khop.py` | Ghi tab "Chờ và khớp" từ vị thế thật, gợi ý giá SL/TP | **🔴 CÓ** — tắt là **không có cắt lỗ** |
+| `hd_update_cho_va_khop.py` | Ghi tab "Chờ và khớp" (chỉ A–I) từ vị thế thật | **🔴 CÓ** — tắt là **không có cắt lỗ** |
 | `hd_order_multi.py` | Đặt lệnh vào (tab ĐẶT LỆNH) + SL/TP (tab Chờ và khớp) | **CÓ** |
 | `hd_alert_possition_and_open_order.py` | Báo Telegram khi mở/đóng vị thế, dọn lệnh sót khi đóng | Nên có |
 | `hd_cancel_selective.py` | Xoá lệnh theo **tick J–M** tab "Chờ và khớp" | Nếu dùng tick |
@@ -122,8 +122,9 @@ python tests/thu_dat_lenh_that.py      # từng loại lệnh: đặt → kiểm
 | `test_hd_order_multi` | Logic đặt lệnh đa kiểu |
 | `test_order_cu` | `hd_order` / `hd_order_123` kiểu cũ + chặn chạy chung với `hd_order_multi` |
 | `test_cancel_selective` | Tick J–M: không xoá nhầm SL, xoá đúng dòng khi dòng xê dịch |
-| `test_cot_nguoi_dung` | Cột J–P đi theo mã |
-| `test_sltp_goi_y` | Gợi ý SL/TP vào N/O/P, không đè số người dùng |
+| `test_cot_nguoi_dung` | Mỗi mã giữ nguyên dòng, bot chỉ ghi A–I; SL/TP mặc định |
+| `test_sltp_goi_y` | hd_update_cho_va_khop chỉ ghi A2 + A–I; Binance lỗi thì không ghi |
+| `test_sltp_mac_dinh_multi` | N/O/P trống → hd_order_multi tự tính SL/TP mặc định |
 | `test_cancel_filter` | Bot huỷ theo lịch không huỷ nhầm SL/TP |
 | `test_balance_only` | Ghi số dư đúng J1:M2 |
 | `test_don_dep` | Không còn code/tab đã bỏ; khoá chống chạy trùng an toàn trên Windows |

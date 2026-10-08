@@ -2,6 +2,7 @@ import giu_cua_so  # PHẢI nạp ĐẦU TIÊN: dừng/lỗi thì giữ cửa s�
 import cst
 import config_watcher
 import gg_sheet_factory
+import cot_nguoi_dung
 import logging
 import os
 import sys
@@ -1020,6 +1021,8 @@ def scan_cho_va_khop_legs(legs, rows=None, lap_ke_hoach=None):
     Tab "Chờ và khớp" mới là nơi theo dõi vị thế thực tế (bot hd_update_cho_va_khop ghi).
 
     Điều kiện dòng (giống hd_order_123): cột D (ĐÃ KHỚP) = 'Y' VÀ cột P (ĐẶT LỆNH) = 'Y'.
+    N/O/P TRỐNG → tự tính trong bộ nhớ (giá vào × %SL/%TP, P = default_allow_order) —
+    trước đây hd_update_cho_va_khop ghi gợi ý này lên sheet; nay bot đó chỉ ghi A–I.
     Cột đọc: A=Symbol, B=LONG/SHORT, D=Đã khớp, P=Đặt lệnh.
     Giá/kiểu mỗi leg theo cấu hình legN_col / legN_type_col / legN_aux / legN_pct_col.
     """
@@ -1046,6 +1049,10 @@ def scan_cho_va_khop_legs(legs, rows=None, lap_ke_hoach=None):
             if not d or len(d) == 0 or not str(d[0]).strip():
                 continue
             sym = str(d[0]).strip()
+            if getattr(cst, 'fill_default_cho_va_khop', False):
+                d = cot_nguoi_dung.dien_mac_dinh_sltp(
+                    d, float(cst.default_sl_rate_layer_1), float(cst.default_tp_rate_layer_1),
+                    cst.default_allow_order)
 
             # Cột D (idx 3) = ĐÃ KHỚP → chỉ xử lý 'Y' (vị thế đang mở)
             da_khop = str(d[3]).strip().upper() if len(d) > 3 else ""

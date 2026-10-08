@@ -63,16 +63,17 @@ account_start_stagger_sec = 20    ; các tài khoản khởi động lệch nhau
 ; Ghi số dư vào tab ĐẶT LỆNH, 2 dòng × 4 cột bắt đầu từ cột này (J → J1:M2).
 balance_cell = J
 
-; ── GỢI Ý SL/TP (hd_update_cho_va_khop điền vào tab "Chờ và khớp") ──────────────
-; Bot điền GIÁ gợi ý vào cột N (cắt lỗ) / O (chốt lời) và cờ P (cho phép) — CHỈ
-; điền ô đang trống, không đè số người dùng đã sửa.
-; % tính từ giá vào. Mỗi tài khoản đặt riêng được bằng cột %SL / %TP trên sheet
-; tổng; hai dòng dưới là mặc định khi sheet để trống.
+; ── SL/TP MẶC ĐỊNH (tab "Chờ và khớp", hd_order_multi tính TRONG BỘ NHỚ) ────────
+; Cột N (cắt lỗ) / O (chốt lời) / P (cho phép) TRỐNG → hd_order_multi tự tính từ giá
+; vào × %. KHÔNG ghi lên sheet (từ 08/10/2026 bot chỉ ghi A–I của tab này); ô người
+; dùng gõ / đặt công thức thì dùng đúng giá trị đó.
+; % mỗi tài khoản đặt riêng được bằng cột %SL / %TP trên sheet tổng; hai dòng dưới
+; là mặc định khi sheet để trống.
 fill_default_cho_va_khop = true
 default_sl_rate_layer_1 = 2
 default_tp_rate_layer_1 = 3
-; N: bot điền giá, người dùng tự gõ Y vào cột P thì lệnh ngược mới vào.
-; Y: SL/TP vào tự động.
+; Cột P trống thì coi như giá trị này.
+; N: người dùng phải gõ Y vào cột P thì SL/TP mới vào.  Y: SL/TP vào tự động.
 default_allow_order = N
 
 ; ── BOT ĐẶT LỆNH (hd_order_multi) ─────────────────────────────────────────────

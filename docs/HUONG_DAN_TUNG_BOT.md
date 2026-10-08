@@ -113,25 +113,34 @@ SL/TP cho vị thế đang có, **không vào lệnh mới**. Thấy ổn mới 
 
 | Đọc | Ghi |
 |---|---|
-| Binance: vị thế, lệnh chờ, lệnh SL/TP | `A2` giờ cập nhật · `A–I` trạng thái từng mã · `Q` giá hiện tại · `N/O/P` gợi ý (chỉ ô **trống**) |
+| Binance: vị thế, lệnh chờ, lệnh SL/TP | **Chỉ** `A2` giờ cập nhật + `A–I` trạng thái từng mã. **Không bao giờ ghi J–P, Q** |
 
 - Mỗi mã 1 dòng: vị thế đang mở (**D = Y**), lệnh vào đang chờ (**D = N**), vị thế
   đã đóng còn sót lệnh (**D = ĐÓNG**).
-- **Gợi ý SL/TP** vào N/O từ giá vào: LONG → N = giá vào × (1 − %SL), O = giá vào × (1 + %TP);
-  SHORT ngược lại. **Không bao giờ đè** số người dùng đã sửa.
-- Thứ tự dòng đổi (có vị thế mới) thì **J–P đi theo mã** — tick và giá SL/TP không
-  rơi sang mã khác. Ô công thức đứng yên tại chỗ. Dòng cũ **không có mã** thì số ở J–P
-  của nó **không** trao cho mã mới đổ vào dòng đó: mã mới nhận gợi ý của chính nó.
-- Ghi `A2` + `A–I` + `Q` + `J–P` trong **một lệnh**, không xoá trước. Bảng ngắn lại thì
-  các dòng thừa được ghi thành ô trống. **Dòng 1–3 không bao giờ bị ghi** (trừ `A2`).
+- **Mỗi mã giữ nguyên dòng của nó** (từ chờ khớp → đã khớp → ĐÓNG vẫn cùng dòng), nên
+  J–P của người dùng đứng yên mà vẫn đúng mã.
+  - Mã mới vào dòng trống mà J–P **không còn số gõ tay** (ô công thức thì được); không
+    có thì thêm xuống cuối. Mã mới **không bao giờ** nhận SL/tick của mã cũ.
+  - Mã không còn trên Binance → A–I của dòng đó thành trống, **J–P để nguyên** — số
+    còn lại ở dòng không mã là của bạn, tự xoá khi không cần (xoá xong dòng đó mới được
+    dùng lại).
+- **Binance lỗi** (mạng, 429, lệch giờ) → **không ghi vòng đó**, giữ nguyên bảng. Trước
+  08/10/2026 bot ghi một bảng thiếu → J–P của mã "biến mất" bị xoá, vòng sau bị điền số
+  gợi ý đè lên SL/TP khách đã gõ.
+- Ghi `A2` + `A–I` trong **một lệnh**, không xoá trước. Bảng ngắn lại thì dòng thừa
+  của A–I thành ô trống. **Dòng 1–3 không bao giờ bị ghi** (trừ `A2`).
+- **SL/TP mặc định** khi N/O/P trống nay do `hd_order_multi` tự tính **trong bộ nhớ**
+  (không ghi lên sheet): LONG → SL = giá vào × (1 − %SL), TP = giá vào × (1 + %TP);
+  SHORT ngược lại; P trống → `default_allow_order`. Ô bạn gõ hay đặt công thức thì bot
+  dùng đúng giá trị đó.
 
 | Cấu hình | Ở đâu | Mặc định |
 |---|---|---|
 | `delay_cho_va_khop` — nhịp quét (giây) | config.ini | 600 |
-| `fill_default_cho_va_khop` — có điền gợi ý N/O/P không | config.ini | true |
-| %SL / %TP gợi ý | cột %SL/%TP trên **sheet tổng** (từng tài khoản) | 2 / 3 |
+| `fill_default_cho_va_khop` — N/O/P trống thì `hd_order_multi` tự tính SL/TP mặc định | config.ini | true |
+| %SL / %TP mặc định | cột %SL/%TP trên **sheet tổng** (từng tài khoản) | 2 / 3 |
 | `default_sl_rate_layer_1` / `default_tp_rate_layer_1` — %SL/%TP khi sheet tổng để trống | config.ini | 2 / 3 |
-| `default_allow_order` — giá trị điền sẵn vào cột P | config.ini | N |
+| `default_allow_order` — cột P trống thì coi như giá trị này | config.ini | N |
 
 **Kiểm tra**: sau 1 vòng, ô `A2` có giờ mới, các mã đang có vị thế hiện với D = Y.
 
@@ -216,7 +225,7 @@ thì bỏ qua — sửa giá cột D không sinh thêm lệnh thứ hai. Muốn 
 khác lệnh đang có thì bot huỷ lệnh cũ (mọi SL, hoặc mọi TP của mã) rồi đặt lại, nên mỗi
 mã đúng 1 SL + 1 TP. N trống (SL theo %) hoặc O = `NGAY` thì không dời. Giá cắt lỗ đã
 vượt giá hiện tại (sẽ khớp ngay) thì bỏ qua và giữ SL cũ.
-`hd_update_cho_va_khop` vẫn điền gợi ý vào N/O như thường — O tự điền là giá kích hoạt.
+N/O trống thì `hd_order_multi` tự tính giá mặc định (như mục 3.1) — O mặc định là giá kích hoạt.
 
 | Cấu hình | Mặc định | Ý nghĩa |
 |---|---|---|
@@ -342,10 +351,10 @@ Từng dòng mã:
 | **G / H** | Có SL / có TP (Y/N) | Bot |
 | **I** | Số lệnh đang treo | Bot |
 | **J–M** | Tick xoá lệnh (mục 3.4) | Người dùng |
-| **N** | Giá **cắt lỗ** | Bot gợi ý khi trống, người dùng sửa được |
-| **O** | Giá **chốt lời** | Bot gợi ý khi trống, người dùng sửa được |
-| **P** | Cho phép đặt SL/TP (`Y`/`N`) | Người dùng (bot điền sẵn theo `default_allow_order`) |
-| **Q** | Giá hiện tại | Bot |
+| **N** | Giá **cắt lỗ** | Người dùng. Trống → bot tính mặc định trong bộ nhớ (không ghi lên sheet) |
+| **O** | Giá **chốt lời** | Người dùng. Trống → bot tính mặc định trong bộ nhớ |
+| **P** | Cho phép đặt SL/TP (`Y`/`N`) | Người dùng. Trống → theo `default_allow_order` |
+| **Q** | (bot không còn ghi từ 08/10/2026) | Người dùng |
 
 ⚠️ **Tiêu đề trên sheet đang lệch với cách bot chạy** (tiêu đề của bot cũ):
 
@@ -358,9 +367,11 @@ Dòng 1 (`E1`, `I1`, các số `0.3 / 0.6` ở `J1:M1`) **không bot nào đọc
 của bot cũ, để hay xoá đều được. Riêng **`N1`** = callback % khi dùng `hd_order_123`.
 
 ⛔ **Quy ước vùng:** dòng **1–3** là của người dùng (bot chỉ ghi `A2`). Từ dòng **4**
-trở xuống, **A–I và Q** là của bot. **J–P** thì bot dời theo mã và điền gợi ý.
+trở xuống, **chỉ A–I** là của bot; **J trở đi** là của người dùng, bot không ghi.
 Không đặt công thức, kể cả công thức tràn như `IMPORTRANGE` hay `ARRAYFORMULA`, chạm
-vào dòng 4+ của A–Q: công thức tràn bị chặn thì báo `#REF!` và mất cả khối. Ví dụ
+vào dòng 4+ của **A–I**: công thức tràn bị chặn thì báo `#REF!` và mất cả khối. Công
+thức tràn vào J–P thì bot không đè nữa, nhưng ô tràn có số thì dòng đó không nhận mã
+mới (bot không phân biệt được số tràn với số gõ tay). Ví dụ
 `IMPORTRANGE(…; "J2:P4")` đặt ở J2 phải sửa thành `"J2:P3"`.
 
 ---

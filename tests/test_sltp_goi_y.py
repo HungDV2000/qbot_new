@@ -1,10 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-Bot phải TỰ ĐIỀN gợi ý SL/TP vào cột N/O/P của tab "Chờ và khớp".
+Tab "Chờ và khớp": hd_update_cho_va_khop CHỈ GHI A2 + A4:I — không bao giờ đụng J–P/Q.
 
-Trước bản vá: compute_default_sl_tp_prices() có sẵn nhưng KHÔNG AI GỌI
-→ N/O/P luôn trống → hd_order_multi bỏ qua mọi dòng (nó đòi D='Y' VÀ P='Y'
-VÀ N/O có giá) → vị thế mở mà KHÔNG CÓ CẮT LỖ.
+Khách 07–08/10/2026: SL/TP khách gõ ở N/O bị đè bằng số gợi ý; công thức IMPORTRANGE
+tràn vào J–P bị ghi thành số cứng. Gốc: bot ghi lại cả khối J4:P mỗi khi thứ tự dòng
+đổi / mã tạm vắng (Binance lỗi trả rỗng). Nay: giữ chỗ dòng theo mã, chỉ ghi A–I,
+Binance lỗi thì bỏ cả vòng ghi. SL/TP mặc định do hd_order_multi tính trong bộ nhớ.
 """
 import os, sys, types, unittest
 from unittest import mock
@@ -31,8 +32,13 @@ class _Sheet:
         self.ghi = []
         self.doc_tra_ve = []
 
+    spreadsheetId = "SHEET_TEST"
+
     def get_cho_va_khop(self, rng, value_render_option=None):
         return self.doc_tra_ve
+
+    def batch_update_values(self, tab, data):
+        self.ghi.append({"tab": tab, "batch": data})
 
     def update_multi(self, tab, idx, arr, col):
         self.ghi.append({"tab": tab, "idx": idx, "col": col, "rows": arr})
@@ -70,8 +76,6 @@ def _nap_module(fill=True, allow="N"):
          fetch_algo_orders_for_symbol=lambda *a, **k: [],
          resync_exchange_time=lambda *a, **k: None,
          normalize_algo_orders_response=lambda *a, **k: [])
-    _mod("binance_symbol_row", fetch_all_tickers_24h=lambda *a, **k: {},
-         get_sheet_col_c_price=lambda *a, **k: 0)
     _mod("telegram_factory", send_tele=lambda *a, **k: None)
     g = types.ModuleType("googleapiclient"); e = types.ModuleType("googleapiclient.errors")
     class HttpError(Exception): pass
@@ -87,142 +91,108 @@ def _nap_module(fill=True, allow="N"):
     return M, sheet
 
 
-class TestGoiYTungDong(unittest.TestCase):
+BTC = ["BTC/USDT", "LONG", "N", "Y", 100.0, 10, "N", "N", 0]
+ETH = ["ETH/USDT", "SHORT", "N", "Y", 50.0, 10, "N", "N", 0]
+
+
+class TestKeHoachGhi(unittest.TestCase):
     def setUp(self):
         self.M, self.sheet = _nap_module()
 
-    def _dong(self, side, status, entry):
-        # A=mã, B=side, C=chờ, D=trạng thái, E=giá vào
-        return ["BTC/USDT", side, "", status, entry, 10, "N", "N", 0]
+    def test_chi_A2_va_A_den_I(self):
+        cu = [BTC + [True, "", "", "", 95, 104, "Y"]]
+        kh = dict(self.M.ke_hoach_ghi_cho_va_khop([ETH, BTC], cu, "T"))
+        self.assertEqual(set(kh), {"A2", "A4:I5"}, "🔴 bot ghi ngoài A–I")
+        self.assertEqual(kh["A4:I5"], [BTC, ETH], "BTC giữ dòng 4, ETH mới vào dòng 5")
 
-    def test_LONG_dang_mo_thi_co_goi_y(self):
-        sl, tp, p = self.M.goi_y_sltp_cho_dong(self._dong("LONG", "Y", 100.0))
-        self.assertAlmostEqual(float(sl), 98.0, places=4, msg="SL LONG = entry × (1-2%)")
-        self.assertAlmostEqual(float(tp), 103.0, places=4, msg="TP LONG = entry × (1+3%)")
-        self.assertEqual(p, "N", "cột P lấy từ default_allow_order")
+    def test_doc_bang_cu_loi_thi_KHONG_ghi(self):
+        self.assertIsNone(self.M.ke_hoach_ghi_cho_va_khop([BTC], None, "T"),
+                          "🔴 không biết dòng nào của mã nào mà vẫn ghi")
 
-    def test_SHORT_dao_chieu_dung(self):
-        sl, tp, _ = self.M.goi_y_sltp_cho_dong(self._dong("SHORT", "Y", 100.0))
-        self.assertAlmostEqual(float(sl), 102.0, places=4, msg="SL SHORT nằm TRÊN giá vào")
-        self.assertAlmostEqual(float(tp), 97.0, places=4, msg="TP SHORT nằm DƯỚI giá vào")
+    def test_bang_rong_van_ghi_hop_le(self):
+        kh = dict(self.M.ke_hoach_ghi_cho_va_khop([], [], "T"))
+        self.assertEqual(kh["A4:I4"], [[""] * 9])
 
-    def test_dong_da_dong_thi_KHONG_boi_so(self):
-        self.assertEqual(self.M.goi_y_sltp_cho_dong(self._dong("LONG", "ĐÓNG", 100.0)),
-                         ["", "", ""])
-
-    def test_chua_khop_thi_KHONG_boi_so(self):
-        self.assertEqual(self.M.goi_y_sltp_cho_dong(self._dong("LONG", "N", 100.0)),
-                         ["", "", ""])
-
-    def test_gia_vao_khong_hop_le(self):
-        self.assertEqual(self.M.goi_y_sltp_cho_dong(self._dong("LONG", "Y", 0)), ["", "", ""])
-        self.assertEqual(self.M.goi_y_sltp_cho_dong(["BTC"]), ["", "", ""])
-
-
-class TestGhiVaoSheet(unittest.TestCase):
-    def setUp(self):
-        self.M, self.sheet = _nap_module()
-
-    BTC = ["BTC/USDT", "LONG", "N", "Y", 100.0, 10, "N", "N", 0]
-    ETH = ["ETH/USDT", "SHORT", "N", "Y", 50.0, 10, "N", "N", 0]
-
-    def _jp(self, sltp, rows, cu, M=None):
-        """Vùng J–P trong kế hoạch ghi (None nếu không ghi J–P)."""
-        kh = (M or self.M).ke_hoach_ghi_cho_va_khop(rows, [[0]] * len(rows), sltp, cu, "t")
-        jp = [(r, v) for r, v in kh if r.startswith("J")]
-        return jp[0] if jp else None
-
-    def test_ghi_tu_cot_J_dong_4(self):
-        vung, rows = self._jp([["98", "103", "N"]], [self.BTC], [])
-        self.assertEqual(vung, "J4:P4", "ghi khối J–P (J–M tick, N=SL, O=TP, P=cho phép) từ dòng 4")
-        self.assertEqual(rows, [["", "", "", "", "98", "103", "N"]])
-
-    def test_KHONG_de_len_so_nguoi_dung_da_sua(self):
-        """Người dùng sửa SL thành 95 → lần chạy sau phải GIỮ NGUYÊN 95."""
-        cu = [self.BTC + ["", "", "", "", "95", "", "Y"]]   # N=95 (user sửa), O trống, P=Y
-        _, rows = self._jp([["98", "103", "N"]], [self.BTC], cu)
-        self.assertEqual(rows[0][4], "95", "🔴 ĐÈ MẤT giá SL người dùng nhập!")
-        self.assertEqual(rows[0][5], "103", "ô trống thì mới điền gợi ý")
-        self.assertEqual(rows[0][6], "Y", "🔴 ĐÈ MẤT cờ cho phép người dùng bật!")
-
-    def test_dong_xe_dich_thi_tick_va_SL_di_theo_ma(self):
-        """BTC từ dòng 4 xuống dòng 5 → tick J và SL 95 phải đi theo BTC."""
-        cu = [self.BTC + [True, "", "", "", "95", "104", "Y"], self.ETH + [""] * 7]
-        _, rows = self._jp([["51", "48", "N"], ["98", "103", "N"]], [self.ETH, self.BTC], cu)
-        self.assertEqual(rows[1], [True, "", "", "", "95", "104", "Y"], "🔴 J–P không đi theo BTC")
-        self.assertEqual(rows[0][:4], ["", "", "", ""], "🔴 tick của BTC rơi sang ETH")
-        self.assertEqual(rows[0][4:], ["51", "48", "N"], "ETH nhận gợi ý của chính nó")
-
-    def test_tat_bang_config(self):
-        M, sheet = _nap_module(fill=False)
-        self.assertIsNone(self._jp([["98", "103", "N"]], [self.BTC], [], M),
-                          "fill_default_cho_va_khop=false, không dời gì → không ghi J–P")
-
-    def test_doc_loi_thi_bo_qua_thay_vi_de_bua(self):
-        """Đọc A–Q lỗi → KHÔNG ghi J–P, để khỏi xoá mất số người dùng."""
-        def no(*a, **k): raise RuntimeError("mạng lỗi")
-        self.sheet.get_cho_va_khop = no
-        anh = self.M.doc_anh_cu_cho_va_khop()
-        self.assertIsNone(anh)
-        self.assertIsNone(self._jp([["98", "103", "N"]], [self.BTC], anh),
-                          "🔴 vẫn ghi dù không đọc được — nguy cơ đè mất dữ liệu")
-
-    def test_doc_dang_FORMULA_de_giu_cong_thuc_va_do_chinh_xac(self):
+    def test_doc_A_den_P_dang_FORMULA(self):
         goi = []
         self.sheet.get_cho_va_khop = lambda rng, value_render_option=None: goi.append((rng, value_render_option)) or []
         self.M.doc_anh_cu_cho_va_khop()
-        self.assertEqual(goi, [("A4:Q1000", "FORMULA")], "đọc tới Q để biết bảng cũ dài bao nhiêu")
+        self.assertEqual(goi, [("A4:P1000", "FORMULA")])
 
-    def test_default_allow_order_Y_thi_tu_dong_hoan_toan(self):
-        M, sheet = _nap_module(allow="Y")
-        p = M.goi_y_sltp_cho_dong(["BTC/USDT", "LONG", "", "Y", 100.0])[2]
-        self.assertEqual(p, "Y", "đặt default_allow_order=Y thì SL/TP tự động hẳn")
+    def test_doc_loi_tra_None(self):
+        def no(*a, **k): raise RuntimeError("mạng lỗi")
+        self.sheet.get_cho_va_khop = no
+        self.assertIsNone(self.M.doc_anh_cu_cho_va_khop())
 
 
-class TestGhiMotLenh(unittest.TestCase):
-    """Bug 1 (09/2026): trước đây xoá A4:I1000 + Q4:Q1000 rồi ghi A2, A–I, Q, J–P bằng
-    6 lệnh rời. Lỗi/429 giữa chừng → A–I trống mà J–P còn → vòng sau J–P mồ côi trao
-    nhầm cho mã mới (bug 2). Nay: 1 lệnh batchUpdate, KHÔNG xoá trước."""
-
-    BTC = TestGhiVaoSheet.BTC
-    ETH = TestGhiVaoSheet.ETH
+class TestBinanceLoiThiKhongGhi(unittest.TestCase):
+    """Gốc lỗi khách 08/10: lấy vị thế lỗi → trả [] → ghi bảng THIẾU → J–P mất chỗ dựa."""
 
     def setUp(self):
         self.M, self.sheet = _nap_module()
 
-    def _kh(self, rows, cu, q=None):
-        q = q if q is not None else [[1.0]] * len(rows)
-        return dict(self.M.ke_hoach_ghi_cho_va_khop(rows, q, [["", "", ""]] * len(rows), cu, "T"))
+    def _co_ghi(self):
+        return [g for g in self.sheet.ghi if "batch" in g]
 
-    def test_mot_lenh_du_A2_AI_Q(self):
-        kh = self._kh([self.BTC], [])
-        self.assertEqual(kh["A2"], [["T"]])
-        self.assertEqual(kh["A4:I4"], [self.BTC])
-        self.assertEqual(kh["Q4:Q4"], [[1.0]])
+    def test_lay_vi_the_loi(self):
+        class Ex:
+            def fetch_positions(self, *a, **k): raise RuntimeError("429 Too Many Requests")
+            def fetch_open_orders(self, *a, **k): return []
+        self.M.exchange = Ex()
+        self.M.do_it()
+        self.assertEqual(self._co_ghi(), [], "🔴 Binance lỗi mà vẫn ghi sheet")
 
-    def test_bang_ngan_lai_thi_de_o_trong_len_dong_thua(self):
-        """Cũ 3 dòng, mới 1 dòng → dòng 5–6 của A–I và Q phải thành ô trống (thay cho clear)."""
-        cu = [self.BTC + [""] * 8, self.ETH + [""] * 8, self.ETH + [""] * 8]
-        kh = self._kh([self.BTC], cu)
-        self.assertEqual(kh["A4:I6"], [self.BTC, [""] * 9, [""] * 9])
-        self.assertEqual(kh["Q4:Q6"], [[1.0], [""], [""]])
+    def test_lay_lenh_cho_loi(self):
+        class Ex:
+            def fetch_positions(self, *a, **k): return []
+            def fetch_open_orders(self, *a, **k): raise RuntimeError("timeout")
+        self.M.exchange = Ex()
+        self.M.do_it()
+        self.assertEqual(self._co_ghi(), [])
 
-    def test_doc_bang_cu_loi_thi_de_trong_toi_het_vung(self):
-        kh = self._kh([self.BTC], None)
-        self.assertIn("A4:I1000", kh)
-        self.assertEqual(len(kh["A4:I1000"]), 997)
-        self.assertNotIn("J4:P4", kh, "không đọc được bảng cũ → không đụng J–P")
+    def test_lay_algo_loi(self):
+        self.M.get_all_open_algo_orders_batch = lambda: None
+        self.M.get_algo_orders_for_symbol = lambda s: (_ for _ in ()).throw(RuntimeError("x"))
+        self.M.exchange.markets = {"BTC/USDT:USDT": {}}
+        self.M.do_it()
+        self.assertEqual(self._co_ghi(), [])
 
-    def test_bang_rong_van_ghi_hop_le(self):
-        kh = self._kh([], [])
-        self.assertEqual(kh["A4:I4"], [[""] * 9])
+    def test_du_lieu_du_thi_ghi_chi_A_den_I(self):
+        self.M.do_it()
+        ghi = self._co_ghi()
+        self.assertEqual(len(ghi), 1)
+        self.assertEqual([v for v, _ in ghi[0]["batch"]], ["A2", "A4:I4"])
 
-    def test_do_it_khong_con_xoa_truoc_ghi(self):
-        import io
-        src = io.open("hd_update_cho_va_khop.py", encoding="utf-8").read()
+    def test_ma_loi_khi_xu_ly_thi_giu_dong_cu(self):
+        self.M._ma_loi_vong.update({"BTC/USDT"})
+        self.sheet.doc_tra_ve = [BTC + [""] * 7]
+        kh = dict(self.M.ke_hoach_ghi_cho_va_khop([], self.sheet.doc_tra_ve, "T",
+                                                  giu_ma=self.M._ma_loi_vong))
+        self.assertEqual(kh["A4:I4"], [BTC])
+
+
+class TestNguon(unittest.TestCase):
+    def _src(self):
+        import io as _io
+        return _io.open("hd_update_cho_va_khop.py", encoding="utf-8").read()
+
+    def test_khong_con_ghi_JP_Q(self):
+        src = self._src()
+        for cam in ("J{DONG_DAU", "Q{DONG_DAU", "khoi_jp", "goi_y_sltp", "tab_q_prices", "can_chinh"):
+            self.assertNotIn(cam, src, f"🔴 còn dấu vết ghi J–P/Q: {cam}")
         for cam in ("clear_multi(", "update_single_value(", "update_multi("):
-            self.assertNotIn(cam, src, f"🔴 còn lệnh ghi/xoá rời {cam} trong hd_update_cho_va_khop")
+            self.assertNotIn(cam, src, f"🔴 còn lệnh ghi/xoá rời {cam}")
         self.assertEqual(src.count("gg_sheet_factory.batch_update_values("), 1)
+
+    def test_khong_nuot_loi_tra_rong(self):
+        src = self._src()
+        self.assertNotIn("all_open_orders = []", src, "🔴 lỗi lấy lệnh lại thành danh sách rỗng")
+        self.assertNotIn("get_all_open_algo_orders_batch() or []", src)
+
+    def test_doc_bang_cu_truoc_khi_ghi(self):
+        src = self._src()
+        self.assertLess(src.index("anh_cu = doc_anh_cu_cho_va_khop()"),
+                        src.index("gg_sheet_factory.batch_update_values("))
 
 
 class TestKhongDungHang1Den3(unittest.TestCase):
@@ -238,9 +208,8 @@ class TestKhongDungHang1Den3(unittest.TestCase):
         return [int(x) for x in re.findall(r"[A-Z]+(\d+)", vung)]
 
     def test_ke_hoach_ghi_chi_tu_dong_4_tru_A2(self):
-        BTC = TestGhiVaoSheet.BTC
-        for cu in ([], None, [BTC + [""] * 8] * 5):
-            for vung, _ in self.M.ke_hoach_ghi_cho_va_khop([BTC], [[1]], [["1", "2", "N"]], cu, "T"):
+        for cu in ([], [BTC + [""] * 7] * 5):
+            for vung, _ in self.M.ke_hoach_ghi_cho_va_khop([BTC], cu, "T"):
                 if vung == "A2":
                     continue
                 self.assertTrue(all(r >= 4 for r in self._dong_dau(vung)), f"🔴 ghi vào {vung}")
@@ -279,26 +248,6 @@ class TestLogDeChuanDoan(unittest.TestCase):
     def test_log_chi_tiet_tung_lenh(self):
         self.assertIn("mo_ta_lenh(", self._src(),
                       "🔴 không log chi tiết lệnh → không biết vì sao cột G/H sai")
-
-
-class TestCodeDaNoi(unittest.TestCase):
-    def test_ham_khong_con_la_code_chet(self):
-        import io
-        src = io.open("hd_update_cho_va_khop.py", encoding="utf-8").read()
-        self.assertGreaterEqual(src.count("compute_default_sl_tp_prices"), 2,
-                                "🔴 hàm vẫn không ai gọi")
-        self.assertIn("khoi_jp_can_ghi(tab_sltp, rows_ai, anh_cu)", src,
-                      "chưa nối vào luồng ghi sheet")
-        # Phải chụp A–Q TRƯỚC khi ghi, nếu không sẽ không biết J–P thuộc mã nào
-        self.assertLess(src.index("anh_cu = doc_anh_cu_cho_va_khop()"),
-                        src.index("gg_sheet_factory.batch_update_values("))
-
-    def test_cac_tham_so_layer_da_duoc_dung(self):
-        import io
-        src = io.open("hd_update_cho_va_khop.py", encoding="utf-8").read()
-        for k in ("cst.fill_default_cho_va_khop", "cst.default_allow_order"):
-            with self.subTest(khoa=k):
-                self.assertIn(k, src, f"{k} vẫn là tham số chết")
 
 
 class TestCotCoSlCoTp(unittest.TestCase):

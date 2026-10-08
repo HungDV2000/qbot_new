@@ -80,8 +80,9 @@ Telegram báo *"Còn … lệnh điều kiện chưa huỷ được"* → vào a
 
 ## 3. Tab CHỜ VÀ KHỚP — cắt lỗ / chốt lời
 
-Lệnh vào khớp xong, `hd_update_cho_va_khop` ghi mã vào tab này với **D = Y** và tự
-điền giá gợi ý vào N/O (chỉ khi ô trống).
+Lệnh vào khớp xong, `hd_update_cho_va_khop` ghi mã vào tab này với **D = Y** (bot chỉ
+ghi cột A–I, mỗi mã giữ nguyên dòng). N/O/P để trống thì `hd_order_multi` tự tính giá
+mặc định từ giá vào × %SL/%TP — không ghi lên sheet, số bạn gõ luôn được ưu tiên.
 
 | Cột | Ý nghĩa | Bạn làm |
 |---|---|---|

@@ -76,14 +76,6 @@ def normalize_algo_orders_response(*a, **k): return []
 clock = 0
 drift = 0
 ''',
-"binance_symbol_row.py": '''
-def build_symbol_data(*a, **k): return []
-def preload_exchange_caches(*a, **k): pass
-def fetch_all_tickers_24h(*a, **k): return {}
-def get_sheet_col_c_price(*a, **k): return 0
-def ticker_key_from_pair_display(p): return p
-def fetch_ticker_24h(*a, **k): return {"lastPrice": "1"}
-''',
 "requests.py": '''
 class _R:
     status_code = 200

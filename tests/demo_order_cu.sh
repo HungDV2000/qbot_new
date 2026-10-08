@@ -26,7 +26,7 @@ rm -rf "$SB"; mkdir -p "$SB"; cd "$SB" || exit 1
 
 cp "$QBOT"/cst.py "$QBOT"/hd_order_multi.py "$QBOT"/hd_order.py "$QBOT"/hd_order_123.py \
    "$QBOT"/binance_order_helper.py "$QBOT"/rate_guard.py "$QBOT"/giu_cua_so.py \
-   "$QBOT"/sheet_config.py "$QBOT"/config_watcher.py "$QBOT"/phan_loai_lenh.py .
+   "$QBOT"/sheet_config.py "$QBOT"/config_watcher.py "$QBOT"/phan_loai_lenh.py "$QBOT"/cot_nguoi_dung.py .
 
 python3 - "$QBOT" <<'PY'
 import re, sys
@@ -35,6 +35,9 @@ s = re.sub(r'(?m)^(bot_id|config_spreadsheet_id)\s*=.*$', r'\1 =', s)
 s = re.sub(r'(?m)^delay_vao_lenh\s*=.*$', 'delay_vao_lenh = 3', s)
 s = re.sub(r'(?m)^delay_vao_lenh_123\s*=.*$', 'delay_vao_lenh_123 = 3', s)
 s = re.sub(r'(?m)^callback_rate_123\s*=.*$', 'callback_rate_123 = 2', s)
+# Bước 3 kiểm nhánh "O TRỐNG → chốt lời kích hoạt ngay" của hd_order_123 → tắt SL/TP
+# mặc định (bật thì hd_order_multi tự điền O = giá vào × %TP, như sheet thật trước đây).
+s = re.sub(r'(?m)^fill_default_cho_va_khop\s*=.*$', 'fill_default_cho_va_khop = false', s)
 s = s.replace("[global]\n", "[global]\naccounts = kh_a\n", 1)
 s += "\n[kh_a]\nkey_binance = KEY_A\nsecret_binance = SEC_A\nspreadsheet_id = SHEET_A\nchat_id = -1\nkey_name = Khach A\n"
 open("config.ini", "w", encoding="utf-8").write(s)

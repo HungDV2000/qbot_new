@@ -1,35 +1,34 @@
 """
-Giữ cột NGƯỜI DÙNG (J–P) của tab "Chờ và khớp" đi THEO MÃ khi dòng xê dịch.
+Tab "Chờ và khớp": bot CHỈ GHI A–I, cột NGƯỜI DÙNG (J–P) bot KHÔNG BAO GIỜ ghi.
 
-Vì sao cần:
-    hd_update_cho_va_khop xoá rồi ghi lại A–I mỗi vòng. Có vị thế mới mở/đóng
-    thì thứ tự dòng đổi: BTC đang ở dòng 5 có thể nhảy xuống dòng 6. Nhưng J–P
-    (tick xoá lệnh, giá SL/TP, cờ cho phép) do người dùng điền thì ĐỨNG YÊN
-    theo số dòng → tick "xoá lệnh" của BTC rơi sang mã khác, giá SL của BTC
-    bị áp cho ETH.
+Vì sao (khách 07–08/10/2026):
+    Trước đây bot dựng lại cả bảng mỗi vòng theo thứ tự (vị thế mở → lệnh chờ → ĐÓNG)
+    rồi ghi lại cả khối J4:P để J–P "đi theo mã". Hai lỗi:
+      • Mã TẠM VẮNG một vòng (Binance lỗi mạng/429 trả danh sách rỗng, mã chờ khớp có
+        2 lệnh…) → J–P của nó bị xoá; vòng sau quay lại thì nhận SỐ GỢI Ý đè lên SL/TP
+        khách đã gõ → hd_order_multi huỷ SL/TP của khách, đặt lại theo giá mặc định.
+      • Ghi lại cả khối J4:P đè lên ô do IMPORTRANGE / ARRAYFORMULA tràn xuống
+        (đọc dạng FORMULA thì ô tràn trông như số thường) → công thức gốc #REF!.
 
-    Hàm ở đây nhận ảnh CŨ (A–P, đọc ngay trước khi xoá) và danh sách dòng MỚI
-    (A–I), trả khối J–P đã dời theo đúng mã.
+Cách mới — GIỮ CHỖ DÒNG THEO MÃ (xep_dong):
+    • Mã đã có dòng → giữ ĐÚNG dòng đó, chỉ cập nhật A–I. J–P đứng yên vẫn đúng mã.
+    • Mã mới → vào dòng trống mà J–P KHÔNG còn số người dùng gõ (ô công thức thì được,
+      vì công thức tính theo dòng); không có thì thêm xuống cuối. Mã mới không bao giờ
+      nhận SL/tick của mã cũ (lỗi thật 09/2026: SL 5008.78/5264.33 rơi sang ETH).
+    • Mã biến mất → xoá trống A–I của dòng đó, J–P để nguyên cho người dùng tự dọn.
+    • Mã bot không xử lý được vòng này (giu_ma) → giữ nguyên A–I cũ của nó.
 
-Quy tắc:
-    • Khoá mỗi dòng = (mã, chiều, lần xuất hiện thứ mấy) — cùng mã 2 dòng vẫn phân biệt.
-    • Ô CÔNG THỨC (bắt đầu bằng "=") KHÔNG dời: công thức kiểu =E5*0.98 tham
-      chiếu theo dòng, dời đi là trỏ sai mã. Công thức đứng yên tại chỗ.
-    • Mã biến mất khỏi bảng → J–P của nó bị xoá theo (không để tick mồ côi
-      rơi vào mã khác đổ vào dòng đó sau này).
-    • Dòng CŨ không có mã (cột A trống) KHÔNG BAO GIỜ trao J–P cho một MÃ MỚI:
-      không biết số đó của mã nào → mã mới nhận J–P sạch (gợi ý N/O/P, tick trống).
-      Chỉ giữ tại chỗ khi dòng mới ở đó cũng không có mã (không xoá số người dùng
-      vô cớ). Lỗi thật 09/2026: SL/TP 5008.78/5264.33 của mã cũ rơi sang ETH.
-      (Trước đây "giữ tại chỗ" cả khi có mã mới — lý do cũ là A–I bị xoá rồi ghi
-      lỗi giữa chừng; nay A–I/Q/J–P ghi CÙNG 1 lệnh nên không còn tình huống đó.)
-    • N/O/P còn trống thì điền gợi ý (nếu bật fill_default_cho_va_khop).
+SL/TP mặc định (dien_mac_dinh_sltp):
+    Trước đây bot ghi gợi ý vào N/O/P. Nay hd_order_multi tự tính TRONG BỘ NHỚ khi ô
+    trống — cùng công thức, không ghi lên sheet. Ô người dùng gõ / đặt công thức thì
+    dùng đúng giá trị đó.
 """
 
 # Cột J..P = chỉ số 9..15 trong dòng A..P
 COT_DAU = 9
 SO_COT = 7                  # J K L M N O P
-VI_TRI_GOI_Y = 4            # N nằm ở vị trí thứ 4 trong khối J–P
+COT_SL, COT_TP, COT_P = 13, 14, 15   # N, O, P
+SO_COT_BOT = 9              # A..I — vùng DUY NHẤT bot được ghi
 
 
 def la_cong_thuc(v):
@@ -37,7 +36,7 @@ def la_cong_thuc(v):
 
 
 def _o(dong, j):
-    return dong[j] if j < len(dong) else ""
+    return dong[j] if dong is not None and j < len(dong) else ""
 
 
 def _rong(v):
@@ -59,58 +58,101 @@ def khoa_cac_dong(rows):
     return khoa
 
 
-def can_chinh(cu, moi_ai, goi_y=None, dien_goi_y=True):
-    """
-    cu      : dòng A–P đang có trên sheet (đọc TRƯỚC khi xoá A–I).
-    moi_ai  : dòng A–I bot sắp ghi.
-    goi_y   : [[SL, TP, cho-phép], ...] song song với moi_ai (có thể None).
+def jp_co_du_lieu(dong):
+    """J–P của dòng còn số/chữ người dùng GÕ (bỏ qua ô trống và ô công thức)."""
+    return any(not _rong(_o(dong, COT_DAU + j)) and not la_cong_thuc(_o(dong, COT_DAU + j))
+               for j in range(SO_COT))
 
-    Trả (khoi, co_doi, so_doi_cho):
-        khoi       — các dòng J–P để ghi từ dòng 4 (đã đệm trống tới hết ảnh cũ)
-        co_doi     — False nếu khối y hệt cái đang có → khỏi ghi
-        so_doi_cho — số dòng có dữ liệu người dùng bị dời sang dòng khác
+
+def xep_dong(cu, moi_ai, giu_ma=()):
+    """
+    cu     : dòng A–P đang có trên sheet (từ dòng 4, đọc dạng FORMULA).
+    moi_ai : dòng A–I bot vừa lấy từ Binance (thứ tự tuỳ ý).
+    giu_ma : mã (A, viết hoa) bot lỗi khi xử lý vòng này → giữ nguyên A–I cũ.
+
+    Trả các dòng A–I để ghi từ dòng 4 — dòng i ứng với dòng sheet 4+i, dài ít nhất
+    bằng bảng cũ (dòng thừa = ô trống, thay cho lệnh xoá).
     """
     cu = cu or []
-    goi_y = goi_y or []
+    giu_ma = {str(m).strip().upper() for m in giu_ma}
     khoa_cu = khoa_cac_dong(cu)
     khoa_moi = khoa_cac_dong(moi_ai)
+    vi_tri_cu = {k: i for i, k in enumerate(khoa_cu) if k is not None}
 
-    theo_khoa = {k: i for i, k in enumerate(khoa_cu) if k is not None}
-    # Khoá đã được một dòng MỚI nhận → dòng cũ đó không còn là "mồ côi"
-    da_nhan = {k for k in khoa_moi if k is not None and k in theo_khoa}
+    ra = [None] * len(cu)
+    chua_co_cho = []
+    for j, k in enumerate(khoa_moi):
+        i = vi_tri_cu.get(k) if k is not None else None
+        if i is not None and ra[i] is None:
+            ra[i] = moi_ai[j]
+        else:
+            chua_co_cho.append(moi_ai[j])
 
-    so_dong = max(len(cu), len(moi_ai))
-    khoi, so_doi_cho = [], 0
-    for i in range(so_dong):
-        dong_cu_tai_cho = cu[i] if i < len(cu) else []
-        k = khoa_moi[i] if i < len(moi_ai) else None
-        nguon_i = theo_khoa.get(k) if k is not None else None
-        if nguon_i is None and k is None and i < len(cu) and khoa_cu[i] is None:
-            nguon_i = i                 # cả cũ lẫn mới không có mã → giữ tại chỗ
-        nguon = cu[nguon_i] if nguon_i is not None else []
-        if nguon_i is not None and nguon_i != i:
-            if any(not _rong(_o(nguon, COT_DAU + j)) and not la_cong_thuc(_o(nguon, COT_DAU + j))
-                   for j in range(SO_COT)):
-                so_doi_cho += 1
+    # Dòng cũ không còn mã nào nhận: mã đang lỗi → giữ A–I cũ; còn lại → trống
+    for i, d in enumerate(cu):
+        if ra[i] is None and str(_o(d, 0)).strip().upper() in giu_ma:
+            ra[i] = list(d[:SO_COT_BOT])
 
-        dong = []
-        for j in range(SO_COT):
-            tai_cho = _o(dong_cu_tai_cho, COT_DAU + j)
-            if la_cong_thuc(tai_cho):
-                dong.append(tai_cho)            # công thức đứng yên
-                continue
-            v = _o(nguon, COT_DAU + j)
-            if la_cong_thuc(v):
-                v = ""                          # công thức không dời theo mã
-            if _rong(v) and dien_goi_y and j >= VI_TRI_GOI_Y and i < len(goi_y):
-                g = goi_y[i]
-                gj = j - VI_TRI_GOI_Y
-                v = g[gj] if gj < len(g) else ""
-            dong.append("" if v is None else v)
-        khoi.append(dong)
+    # Mã mới: dòng trống (không mã, không bị giữ) mà J–P không còn số người dùng
+    for dong in chua_co_cho:
+        cho = next((i for i in range(len(ra)) if ra[i] is None and not jp_co_du_lieu(cu[i])), None)
+        if cho is None:
+            ra.append(dong)
+        else:
+            ra[cho] = dong
 
-    co_doi = any(
-        str(khoi[i][j]).strip() != str(_o(cu[i] if i < len(cu) else [], COT_DAU + j)).strip()
-        for i in range(len(khoi)) for j in range(SO_COT)
-    )
-    return khoi, co_doi, so_doi_cho
+    return [_du_cot(r) for r in ra]
+
+
+def _du_cot(r):
+    r = list(r or [])[:SO_COT_BOT]
+    return ["" if v is None else v for v in r] + [""] * (SO_COT_BOT - len(r))
+
+
+# ── SL/TP mặc định khi N/O/P trống (hd_order_multi dùng, KHÔNG ghi lên sheet) ──
+
+def lam_tron_gia(gia, gia_vao):
+    """Làm tròn theo độ lớn giá vào (như hiển thị trên app)."""
+    if gia is None or not gia_vao or gia_vao <= 0:
+        return gia
+    if gia_vao < 1:
+        return round(gia, 6)
+    if gia_vao < 100:
+        return round(gia, 4)
+    if gia_vao < 10000:
+        return round(gia, 2)
+    return round(gia, 1)
+
+
+def goi_y_sltp(chieu, gia_vao, ty_le_sl, ty_le_tp):
+    """(giá SL, giá TP) mặc định từ giá vào và % — None nếu không tính được."""
+    try:
+        gia_vao = float(gia_vao)
+    except (TypeError, ValueError):
+        return None, None
+    if gia_vao <= 0:
+        return None, None
+    la_long = str(chieu).strip().upper() == 'LONG'
+    sl = gia_vao * (1 - ty_le_sl / 100.0) if la_long else gia_vao * (1 + ty_le_sl / 100.0)
+    tp = gia_vao * (1 + ty_le_tp / 100.0) if la_long else gia_vao * (1 - ty_le_tp / 100.0)
+    return (lam_tron_gia(sl, gia_vao) if sl > 0 else None,
+            lam_tron_gia(tp, gia_vao) if tp > 0 else None)
+
+
+def dien_mac_dinh_sltp(dong, ty_le_sl, ty_le_tp, cho_phep):
+    """
+    Bản SAO của dòng A–P: N/O trống → SL/TP mặc định, P trống → cho_phep.
+    Chỉ với vị thế ĐANG MỞ (D = 'Y') có giá vào hợp lệ — dòng khác giữ nguyên.
+    Ô đã có giá trị (người dùng gõ hoặc công thức) KHÔNG bao giờ bị thay.
+    """
+    d = list(dong or [])
+    if str(_o(d, 3)).strip().upper() != 'Y':
+        return d
+    sl, tp = goi_y_sltp(_o(d, 1), _o(d, 4), ty_le_sl, ty_le_tp)
+    if sl is None:
+        return d
+    d += [""] * (COT_P + 1 - len(d))
+    for j, v in ((COT_SL, sl), (COT_TP, tp), (COT_P, cho_phep)):
+        if _rong(d[j]) and not _rong(v):
+            d[j] = v
+    return d

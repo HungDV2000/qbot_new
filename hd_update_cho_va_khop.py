@@ -14,7 +14,6 @@ from binance_futures_direct import (
     normalize_algo_orders_response,
     resync_exchange_time,
 )
-from binance_symbol_row import fetch_all_tickers_24h, get_sheet_col_c_price
 from phan_loai_lenh import la_lenh_dong, mo_ta as mo_ta_lenh, phan_loai
 
 file_name = os.path.basename(os.path.abspath(__file__))  
@@ -205,6 +204,25 @@ def check_sl_tp_orders(symbol, orders):
         return False, False, len(orders)
 
 
+class LoiLayDuLieu(Exception):
+    """Lấy dữ liệu Binance KHÔNG ĐỦ → vòng này KHÔNG ghi sheet.
+
+    Trước đây lỗi mạng/429 bị nuốt và trả danh sách rỗng → bot ghi một bảng THIẾU
+    (mọi vị thế 'biến mất') → J–P của khách bị xoá, vòng sau điền số gợi ý đè lên."""
+
+
+# Mã bot không xử lý được trong vòng hiện tại → giữ nguyên A–I cũ của nó trên sheet
+_ma_loi_vong = set()
+
+
+def _ghi_nho_ma_loi(ma_tho):
+    ma = str(ma_tho or '').replace(':USDT', '').replace('/', '').strip().upper()
+    if not ma:
+        return False
+    _ma_loi_vong.add(ma.replace('USDT', '/USDT') if ma.endswith('USDT') else ma)
+    return True
+
+
 def get_all_entry_algo_orders():
     """
     [Bug B FIX] Lấy TẤT CẢ algo orders đang active (NEW).
@@ -225,6 +243,7 @@ def get_all_entry_algo_orders():
     print("⚠️ Batch algo endpoint lỗi, chuyển sang loop từng symbol...", flush=True)
 
     all_entry_algo = []
+    so_loi = 0
     try:
         symbols = list(exchange.markets.keys())
         delivery_count = 0
@@ -250,6 +269,7 @@ def get_all_entry_algo_orders():
 
             except Exception as e:
                 logger.warning(f"Lỗi khi lấy algo orders cho {sym}: {e}")
+                so_loi += 1
                 continue
 
         print(f"✅ Đã kiểm tra {checked_count} symbols (bỏ qua {delivery_count} delivery futures)", flush=True)
@@ -259,6 +279,9 @@ def get_all_entry_algo_orders():
     except Exception as e:
         print(f"❌ Lỗi khi lấy entry algo orders (fallback): {e}", flush=True)
         logger.error(f"Lỗi get_all_entry_algo_orders fallback: {e}", exc_info=True)
+        raise LoiLayDuLieu(f"không lấy được lệnh điều kiện (algo): {e}")
+    if so_loi:
+        raise LoiLayDuLieu(f"lấy lệnh điều kiện lỗi ở {so_loi} mã")
 
     return all_entry_algo
 
@@ -277,7 +300,7 @@ def get_all_reduce_only_orders_by_symbol():
         all_open_orders = exchange.fetch_open_orders()
     except Exception as e:
         logger.warning(f"Lỗi fetch_open_orders trong reduce_only scan: {e}")
-        all_open_orders = []
+        raise LoiLayDuLieu(f"không lấy được lệnh thường (dò vị thế ĐÓNG): {e}")
 
     for order in all_open_orders:
         info = order.get('info', {}) or {}
@@ -303,7 +326,9 @@ def get_all_reduce_only_orders_by_symbol():
                 result[sym_clean]['side'] = 'SHORT'
 
     # 2) Algo orders reduceOnly + NEW/TRIGGERED
-    algo_orders = get_all_open_algo_orders_batch() or []
+    algo_orders = get_all_open_algo_orders_batch()
+    if algo_orders is None:
+        raise LoiLayDuLieu("không lấy được lệnh điều kiện (dò vị thế ĐÓNG)")
     for algo in algo_orders:
         info = algo.get('info', {}) or {}
         if not la_lenh_dong(algo):
@@ -347,9 +372,11 @@ def detect_closed_positions_with_residual_orders(opened_positions_symbols):
     """
     try:
         all_reduce_only = get_all_reduce_only_orders_by_symbol()
+    except LoiLayDuLieu:
+        raise
     except Exception as e:
         logger.error(f"Lỗi khi lấy reduce_only orders: {e}", exc_info=True)
-        return []
+        raise LoiLayDuLieu(f"dò vị thế ĐÓNG lỗi: {e}")
 
     closed_list = []
     for sym_clean, data in all_reduce_only.items():
@@ -373,166 +400,40 @@ def detect_closed_positions_with_residual_orders(opened_positions_symbols):
     return closed_list
 
 
-def _round_price_for_sheet(price, entry_price):
-    """Làm tròn giá hiển thị trên sheet theo scale của entry price (khớp hiển thị UI)."""
-    if price is None or entry_price is None or entry_price <= 0:
-        return price
-    # Quy tắc hiển thị: <1 → 6 decimals; <100 → 4; <10000 → 2; else 0
-    if entry_price < 1:
-        return round(price, 6)
-    if entry_price < 100:
-        return round(price, 4)
-    if entry_price < 10000:
-        return round(price, 2)
-    return round(price, 1)
-
-
-def compute_default_sl_tp_prices(side, entry_price):
-    """
-    [TASK 1] Tính default 3 giá SL + 3 giá TP từ entry price và rates trong config.
-
-    Args:
-        side: "LONG" / "SHORT"
-        entry_price: float > 0
-
-    Returns:
-        (sl_list, tp_list) — mỗi list 3 phần tử (float).
-        Nếu entry_price <= 0 hoặc side không hợp lệ → trả về ([None]*3, [None]*3).
-    """
-    if not entry_price or entry_price <= 0:
-        return [None, None, None], [None, None, None]
-
-    is_long = (str(side).upper() == 'LONG')
-    sl_rates = [cst.default_sl_rate_layer_1, cst.default_sl_rate_layer_2, cst.default_sl_rate_layer_3]
-    tp_rates = [cst.default_tp_rate_layer_1, cst.default_tp_rate_layer_2, cst.default_tp_rate_layer_3]
-
-    sl_prices = []
-    tp_prices = []
-    for r in sl_rates:
-        if is_long:
-            p = entry_price * (1 - r / 100.0)
-        else:
-            p = entry_price * (1 + r / 100.0)
-        sl_prices.append(_round_price_for_sheet(p, entry_price) if p > 0 else None)
-
-    for r in tp_rates:
-        if is_long:
-            p = entry_price * (1 + r / 100.0)
-        else:
-            p = entry_price * (1 - r / 100.0)
-        tp_prices.append(_round_price_for_sheet(p, entry_price) if p > 0 else None)
-
-    return sl_prices, tp_prices
-
-
-def goi_y_sltp_cho_dong(row_ai):
-    """
-    Từ 1 dòng A–I, dựng gợi ý [giá SL, giá TP, cho-phép-đặt] cho cột N/O/P.
-
-    Chỉ gợi ý khi dòng đó ĐANG MỞ VỊ THẾ (cột D = 'Y') và có giá vào hợp lệ.
-    Dòng đã ĐÓNG hoặc chưa khớp thì trả về rỗng — không bịa số.
-
-    Dùng mức lớp 1 (`default_sl_rate_layer_1` / `default_tp_rate_layer_1`).
-    Sheet hiện chỉ có MỘT cột SL (N) và MỘT cột TP (O), không có chỗ cho 3 lớp.
-    """
-    try:
-        side = str(row_ai[1]).strip() if len(row_ai) > 1 else ""
-        status_d = str(row_ai[3]).strip().upper() if len(row_ai) > 3 else ""
-        entry = float(row_ai[4]) if len(row_ai) > 4 and row_ai[4] else 0
-    except (ValueError, TypeError, IndexError):
-        return ["", "", ""]
-
-    if status_d != "Y" or entry <= 0:
-        return ["", "", ""]
-
-    sl_list, tp_list = compute_default_sl_tp_prices(side, entry)
-    sl = sl_list[0] if sl_list and sl_list[0] else ""
-    tp = tp_list[0] if tp_list and tp_list[0] else ""
-    return [sl, tp, cst.default_allow_order]
-
-
 def doc_anh_cu_cho_va_khop():
     """
-    Đọc A–Q NGAY TRƯỚC khi ghi, để biết J–P đang thuộc mã nào và bảng cũ dài bao
-    nhiêu dòng (để ghi đè ô trống lên phần thừa thay vì xoá trước).
-    Đọc dạng FORMULA: số giữ nguyên độ chính xác (không bị làm tròn theo định
-    dạng hiển thị) và ô công thức giữ nguyên công thức khi ghi lại.
-    Trả None nếu lỗi → bước sau để nguyên J–P, không dời/không điền.
+    Đọc A–P NGAY TRƯỚC khi ghi: cột A/B cho biết mã nào đang ở dòng nào (giữ chỗ),
+    J–P cho biết dòng trống nào còn số người dùng (không cho mã mới vào).
+    Dạng FORMULA: ô công thức hiện là công thức → phân biệt được với số gõ tay.
+    Trả None nếu lỗi → vòng này KHÔNG ghi (không biết dòng nào của mã nào).
     """
     try:
-        return gg_sheet_factory.get_cho_va_khop("A4:Q1000", value_render_option="FORMULA") or []
+        return gg_sheet_factory.get_cho_va_khop("A4:P1000", value_render_option="FORMULA") or []
     except Exception as e:
-        logger.warning(f"Không đọc được A4:Q1000 trước khi ghi: {e}")
-        print(f"  ⚠️  Không đọc được A–Q — lượt này để nguyên J–P: {e}", flush=True)
+        logger.warning(f"Không đọc được A4:P1000 trước khi ghi: {e}")
+        print(f"  ⚠️  Không đọc được bảng hiện tại — vòng này KHÔNG ghi: {e}", flush=True)
         return None
 
 
 DONG_DAU_CVK = 4          # dòng dữ liệu đầu tiên — hàng 1–3 là tiêu đề của NGƯỜI DÙNG
-DONG_CUOI_CVK = 1000
 
 
-def _dem_du(rows, so_dong, so_cot):
-    """Đệm ma trận tới so_dong dòng × so_cot cột bằng ô trống ("" = xoá ô khi ghi)."""
-    out = [list(r)[:so_cot] + [""] * (so_cot - len(r)) for r in rows]
-    out += [[""] * so_cot for _ in range(so_dong - len(out))]
-    return out
-
-
-def ke_hoach_ghi_cho_va_khop(rows_ai, q_prices, tab_sltp, anh_cu, timestamp_str):
+def ke_hoach_ghi_cho_va_khop(rows_ai, anh_cu, timestamp_str, giu_ma=()):
     """
-    Dựng MỘT lệnh ghi (values.batchUpdate) cho tab "Chờ và khớp":
-      A2 (giờ quét) · A4:I (trạng thái) · Q4:Q (giá) · J4:P (cột người dùng, nếu cần dời).
-    KHÔNG xoá trước: dòng thừa của bảng cũ được ghi đè bằng ô trống trong cùng lệnh.
-    Trước đây: xoá A4:I1000 + Q4:Q1000 → ghi A2 → ghi A–I → ghi Q → ghi J–P = 6 lệnh
-    rời; lỗi/429 giữa chừng để lại A–I trống còn J–P cũ, vòng sau J–P đó trao nhầm mã.
-    Hàng 1–3 KHÔNG BAO GIỜ bị ghi (trừ A2) — đó là tiêu đề/công thức của người dùng.
-    Trả [(vùng, ma trận)].
-    """
-    n = len(rows_ai)
-    # Không đọc được bảng cũ → không biết dài bao nhiêu → đệm tới hết vùng
-    so_dong = max(n, len(anh_cu)) if anh_cu is not None else DONG_CUOI_CVK - DONG_DAU_CVK + 1
-    so_dong = max(so_dong, 1)
-    cuoi = DONG_DAU_CVK + so_dong - 1
-    data = [
-        ("A2", [[timestamp_str]]),
-        (f"A{DONG_DAU_CVK}:I{cuoi}", _dem_du(rows_ai, so_dong, 9)),
-        (f"Q{DONG_DAU_CVK}:Q{cuoi}", _dem_du(q_prices, so_dong, 1)),
-    ]
-    khoi = khoi_jp_can_ghi(tab_sltp, rows_ai, anh_cu)
-    if khoi:
-        data.append((f"J{DONG_DAU_CVK}:P{DONG_DAU_CVK + len(khoi) - 1}", _dem_du(khoi, len(khoi), 7)))
-    return data
-
-
-def khoi_jp_can_ghi(tab_sltp, rows_ai, anh_cu):
-    """
-    Khối cột người dùng J–P (từ dòng 4) cần ghi lại sau khi A–I đổi, hoặc None nếu
-    không cần ghi:
-      • J–M (tick xoá lệnh) và N/O/P (giá SL/TP, cho phép) DỜI THEO MÃ khi thứ
-        tự dòng đổi — nếu không, tick/giá của BTC sẽ rơi sang mã khác.
-      • N/O/P còn trống thì điền gợi ý — KHÔNG đè số người dùng đã sửa.
-
-    Vì sao cần điền gợi ý: hd_order_multi chỉ đặt SL/TP khi cột D='Y' VÀ cột
-    P='Y' VÀ N/O có giá. Trước đây KHÔNG BOT NÀO điền N/O/P nên chúng luôn
-    trống → bot bỏ qua mọi dòng → vị thế mở mà không có cắt lỗ.
-
-    (compute_default_sl_tp_prices đã có sẵn trong file này từ lâu nhưng
-     không ai gọi — đây là chỗ nối nó vào luồng chạy.)
+    MỘT lệnh ghi (values.batchUpdate): A2 (giờ quét) + A4:I (trạng thái).
+    Bot KHÔNG ghi gì ngoài A–I: J–P là của người dùng, mỗi mã giữ nguyên dòng của nó
+    (cot_nguoi_dung.xep_dong) nên J–P đứng yên vẫn đúng mã.
+    Dòng thừa của bảng cũ → ô trống A–I trong cùng lệnh (không xoá trước).
+    anh_cu None (đọc lỗi) → trả None: KHÔNG ghi.
     """
     if anh_cu is None:
-        return None     # không đọc được ảnh cũ → không dám dời/ghi đè
-    dien = bool(cst.fill_default_cho_va_khop)
-    if not dien:
-        print("  ⏭️  fill_default_cho_va_khop = false → không điền gợi ý N/O/P", flush=True)
-
-    khoi, co_doi, so_doi_cho = cot_nguoi_dung.can_chinh(anh_cu, rows_ai, tab_sltp, dien)
-    if not co_doi:
-        print("  ✔️  Cột J–P không cần đổi", flush=True)
         return None
-    print(f"  ✍️  Cột J–P: ghi {len(khoi)} dòng, dời theo mã {so_doi_cho} dòng "
-          f"(số người dùng đã sửa được giữ nguyên)", flush=True)
-    logger.info(f"J–P: ghi {len(khoi)} dòng, dời theo mã {so_doi_cho}")
-    return khoi
+    bang = cot_nguoi_dung.xep_dong(anh_cu, rows_ai, giu_ma) or [[""] * 9]
+    cuoi = DONG_DAU_CVK + len(bang) - 1
+    return [
+        ("A2", [[timestamp_str]]),
+        (f"A{DONG_DAU_CVK}:I{cuoi}", bang),
+    ]
 
 
 def build_cho_va_khop_row(
@@ -588,7 +489,7 @@ def get_all_open_orders_with_single_order():
         except Exception as e:
             print(f"⚠️ Lỗi khi lấy open orders: {e}", flush=True)
             logger.warning(f"Lỗi fetch_open_orders: {e}")
-            all_open_orders = []
+            raise LoiLayDuLieu(f"không lấy được lệnh chờ: {e}")
 
         # ✅ BƯỚC 2: Lấy TẤT CẢ algo orders từ Binance API trực tiếp
         print("🔍 Đang lấy algo orders từ Binance API...", flush=True)
@@ -637,9 +538,12 @@ def get_all_open_orders_with_single_order():
         print(f"✅ Tìm thấy {len(res)} symbols có đúng 1 order (lệnh entry)", flush=True)
         logger.info(f"Symbols có đúng 1 order: {len(res)}")
 
+    except LoiLayDuLieu:
+        raise
     except Exception as e:
         print(f"❌ Lỗi khi lấy orders từ Binance: {e}", flush=True)
         logger.error(f"Lỗi get_all_open_orders_with_single_order: {e}", exc_info=True)
+        raise LoiLayDuLieu(f"lỗi xử lý lệnh chờ: {e}")
 
     return res
 
@@ -697,7 +601,7 @@ def get_opened_possition():
         logger.info(f"✅ Đã lấy {len(positions)} positions từ fetch_positions()")
     except Exception as e:
         logger.error(f"Lỗi khi lấy positions: {e}", exc_info=True)
-        return []
+        raise LoiLayDuLieu(f"không lấy được vị thế: {e}")
     
     opened_possition = []
     leverage_map = get_position_leverage_map()
@@ -775,6 +679,8 @@ def get_opened_possition():
                     
         except Exception as e:
             logger.error(f"Lỗi khi xử lý position {position.get('symbol', 'N/A')}: {e}", exc_info=True)
+            if not _ghi_nho_ma_loi(position.get('symbol')):
+                raise LoiLayDuLieu(f"lỗi xử lý một vị thế không rõ mã: {e}")
             continue
     
     return opened_possition
@@ -788,266 +694,273 @@ def do_it():
     logger.info(f"Bắt đầu scan 'Chờ và khớp'")
 
     tab_100_ma_2d_arr = []
-    tab_q_prices: list = []
-    tab_sltp: list = []     # gợi ý [SL, TP, cho-phép] cho cột N/O/P
-
-    print("📡 Lấy giá hiện tại toàn sàn (REST ticker 24h)...", flush=True)
-    try:
-        tickers_24h = fetch_all_tickers_24h()
-        print(f"✅ Đã cache {len(tickers_24h)} ticker futures", flush=True)
-    except Exception as e:
-        logger.warning(f"Không lấy được ticker 24h: {e}")
-        tickers_24h = {}
-        print(f"⚠️ Không lấy được ticker 24h — cột Q sẽ trống: {e}", flush=True)
+    _ma_loi_vong.clear()
 
     def _append_row(row_ai, symbol_fmt):
-        tab_100_ma_2d_arr.append(row_ai)
-        tab_q_prices.append([get_sheet_col_c_price(tickers_24h, symbol_fmt)])
         # row_ai: A=mã, B=side, C=chờ khớp, D=trạng thái, E=giá vào, F=đòn bẩy...
-        tab_sltp.append(goi_y_sltp_cho_dong(row_ai))
+        tab_100_ma_2d_arr.append(row_ai)
 
-    # BƯỚC 1: Lấy positions đang mở
-    print("📊 BƯỚC 1: Lấy positions đang mở từ Binance...", flush=True)
-    res = get_opened_possition()
-    print(f"✅ Tổng positions: {len(res)}\n", flush=True)
-    logger.info(f"Tổng positions đang mở: {len(res)}")
+    def _thu_thap():
+        # BƯỚC 1: Lấy positions đang mở
+        print("📊 BƯỚC 1: Lấy positions đang mở từ Binance...", flush=True)
+        res = get_opened_possition()
+        print(f"✅ Tổng positions: {len(res)}\n", flush=True)
+        logger.info(f"Tổng positions đang mở: {len(res)}")
     
-    # BƯỚC 2: Xử lý từng position
-    print("🔧 BƯỚC 2: Xử lý từng position...", flush=True)
-    for idx, position in enumerate(res, 1):
-        try:
-            position_amt = float(position['positionAmt'])
-            cac_ma = position['symbol']
-            
-            print(f"\n  [{idx}/{len(res)}] Xử lý {cac_ma}...", flush=True)
-            
-            # Debug: Log raw position data để kiểm tra
-            logger.debug(f"Raw position data for {cac_ma}: {position}")
-            
-            # Format symbol: HOMEUSDT → HOME/USDT
-            symbol_formatted = cac_ma.replace("USDT", "/USDT")
-            
-            # Xác định LONG/SHORT
-            vi_the_short_long = 'LONG' if position_amt > 0 else 'SHORT' if position_amt < 0 else 'Flat'
-            
-            # Đã khớp (có position)
-            cho_khop = "N"  # Không còn chờ
-            da_khop_mo_vi_the = "Y"  # Đã mở vị thế
-            
-            # Entry price và leverage - Parse an toàn
-            entry_price_raw = position.get('entryPrice')
-            if entry_price_raw is not None and entry_price_raw != '' and entry_price_raw != 0:
-                try:
-                    gia_vao = float(entry_price_raw)
-                except (ValueError, TypeError):
-                    gia_vao = 0.0
-                    logger.warning(f"{cac_ma}: Lỗi parse entryPrice: {entry_price_raw}")
-            else:
-                gia_vao = 0.0
-                logger.warning(f"{cac_ma}: entryPrice rỗng hoặc = 0, raw: {entry_price_raw}")
-            
-            leverage_raw = position.get('leverage')
-            if leverage_raw is not None and leverage_raw != '' and leverage_raw != 0:
-                try:
-                    don_bay = int(float(leverage_raw))
-                except (ValueError, TypeError):
-                    don_bay = 1
-            else:
-                don_bay = 1
-            
-            # Lấy orders cho symbol này - dùng symbol_ccxt nếu có (format CCXT chuẩn)
-            symbol_for_orders = position.get('symbol_ccxt', cac_ma)
-            # Nếu không có symbol_ccxt, convert từ "HOMEUSDT" → "HOME/USDT:USDT"
-            if symbol_for_orders == cac_ma and 'symbol_ccxt' not in position:
-                symbol_for_orders = cac_ma.replace("USDT", "/USDT:USDT")
-            
+        # BƯỚC 2: Xử lý từng position
+        print("🔧 BƯỚC 2: Xử lý từng position...", flush=True)
+        for idx, position in enumerate(res, 1):
             try:
-                orders = exchange.fetch_open_orders(symbol=symbol_for_orders)
-            except Exception as e:
-                logger.warning(f"Lỗi khi lấy open orders cho {symbol_for_orders}: {e}")
-                orders = []
+                position_amt = float(position['positionAmt'])
+                cac_ma = position['symbol']
             
-            # ✅ LOGIC MỚI: Phân tích chính xác SL/TP (quét cả algo orders)
-            # Truyền symbol để quét algo orders
-            has_sl, has_tp, order_count = check_sl_tp_orders(symbol_for_orders, orders)
+                print(f"\n  [{idx}/{len(res)}] Xử lý {cac_ma}...", flush=True)
             
-            lenh_ls = "Y" if has_sl else "N"  # Cột G
-            lenh_tp = "Y" if has_tp else "N"  # Cột H
-            lenh_nguoc = order_count  # Cột I (số lượng orders)
+                # Debug: Log raw position data để kiểm tra
+                logger.debug(f"Raw position data for {cac_ma}: {position}")
             
-            print(f"    ✓ Side: {vi_the_short_long}, Entry: {gia_vao}, Lev: {don_bay}x", flush=True)
-            print(f"    ✓ Orders: {order_count} (SL: {lenh_ls}, TP: {lenh_tp})", flush=True)
-            
-            # ⚠️ VALIDATION: SKIP NẾU ENTRY PRICE = 0
-            if gia_vao == 0.0 or gia_vao is None:
-                print(f"    ❌ BỎ QUA: Entry price = 0 hoặc None! (Raw: {entry_price_raw})", flush=True)
-                logger.error(f"❌ {symbol_formatted}: Entry price không hợp lệ (0 hoặc None). Raw: {entry_price_raw}")
-                logger.error(f"   Position data: {position}")
-                logger.error(f"   FULL RAW POSITION DATA: {position}")
-                logger.error(f"   Position keys: {list(position.keys())}")
-                # Log từng field quan trọng để debug
-                for key in ['entryPrice', 'positionAmt', 'unrealizedProfit', 'leverage', 'markPrice', 'liquidationPrice', 'notional', 'isolated', 'marginType']:
-                    if key in position:
-                        logger.error(f"   {key}: {position[key]} (type: {type(position[key])})")
-                continue  # Bỏ qua position này
-            
-            logger.info(f"{symbol_formatted}: {vi_the_short_long}, Entry={gia_vao}, Lev={don_bay}, Orders={order_count}, SL={lenh_ls}, TP={lenh_tp}")
-            
-            row = build_cho_va_khop_row(
-                symbol_formatted=symbol_formatted,
-                side=vi_the_short_long,
-                status_d="Y",  # Position đang mở
-                entry_price=gia_vao,
-                leverage=don_bay,
-                has_sl=has_sl,
-                has_tp=has_tp,
-                order_count=order_count,
-            )
-            _append_row(row, symbol_formatted)
-            
-        except Exception as e:
-            print(f"    ❌ Lỗi xử lý position {cac_ma}: {e}", flush=True)
-            logger.error(f"Lỗi xử lý position {cac_ma}: {e}", exc_info=True)
-            continue
-
-    # BƯỚC 3: Lấy orders chờ khớp (entry orders)
-    print("\n📝 BƯỚC 3: Lấy orders chờ khớp (entry orders)...", flush=True)
-    res1 = get_all_open_orders_with_single_order()
-    print(f"✅ Tổng orders chờ khớp: {len(res1)}\n", flush=True)
-    logger.info(f"Tổng orders chờ khớp: {len(res1)}")
-
-    # BƯỚC 4: Xử lý từng order chờ khớp
-    print("🔧 BƯỚC 4: Xử lý orders chờ khớp...", flush=True)
-    for idx, order in enumerate(res1, 1):
-        try:
-            print(f"\n  [{idx}/{len(res1)}] Xử lý order...", flush=True)
-
-            # ✅ Check xem là algo order hay open order
-            is_algo_order = 'algoId' in order or 'algoType' in order
-
-            if is_algo_order:
-                # === XỬ LÝ ALGO ORDER ===
-                algo_id = order.get('algoId', 'N/A')
-                algo_type = order.get('algoType', 'N/A')
-                algo_status = order.get('algoStatus', 'N/A')
-
-                print(f"    📌 Algo Order: AlgoId={algo_id}, Type={algo_type}, Status={algo_status}", flush=True)
-                logger.info(f"Xử lý algo order: AlgoId={algo_id}, Type={algo_type}, Status={algo_status}")
-
-                # Symbol từ order (Binance raw format: 1000CATUSDT)
-                order_symbol = order.get('symbol', order.get('symbol_clean', order.get('symbol_ccxt', '')))
-                # Chuẩn hóa về format HOMEUSDT để so sánh với position['symbol']
-                order_symbol_clean = order_symbol.replace('/', '').replace(':USDT', '')
-
-                # Skip nếu symbol đã có position (tránh dup dữ liệu — giống check ở open orders)
-                if next((p for p in res if p.get('symbol', '') == order_symbol_clean), None):
-                    print(f"    ⏭️  Bỏ qua algo order (đã có position cho {order_symbol_clean})", flush=True)
-                    logger.info(f"Bỏ qua algo order {algo_id} của {order_symbol_clean}: đã có position")
-                    continue
-                # Convert HOMEUSDT → HOME/USDT
-                symbol_formatted = order_symbol.replace("USDT", "/USDT") if order_symbol else ""
-
-                # [Bug A FIX] Raw Binance algo API trả về 'side' ở top-level, không qua 'info'
-                algo_info = order.get('info', {})
-                side = order.get('side', algo_info.get('side', 'UNKNOWN')).upper()
-                vi_the_short_long = 'LONG' if side == "BUY" else 'SHORT'
-
-                # Giá kích hoạt
-                gia_vao = order.get('activatePrice', algo_info.get('activatePrice', 0))
-
-                # Đang chờ khớp
-                cho_khop = "Y"
-                da_khop_mo_vi_the = "N"
-                don_bay = "N"
-                lenh_ls = "N"
-                lenh_tp = "N"
-                lenh_nguoc = 0
-
-                print(f"    ✓ Symbol: {symbol_formatted}", flush=True)
-                print(f"    ✓ Side: {vi_the_short_long}, Activation: {gia_vao}", flush=True)
-                print(f"    ✓ Trạng thái: Chờ khớp (algo)", flush=True)
-
-            else:
-                # === XỬ LÝ OPEN ORDER THÔNG THƯỜNG ===
-                print(f"  [{idx}/{len(res1)}] Xử lý order {order.get('id', 'N/A')}...", flush=True)
-
-                order_symbol = order['info']['symbol']
-
-                # Skip nếu symbol đã có position (tránh trùng lặp)
-                if next((position for position in res if order_symbol == position['symbol']), None):
-                    print(f"    ⏭️  Bỏ qua (đã có position)", flush=True)
-                    continue
-
-                print(f"    ✓ Symbol: {order['symbol']}, Type: {order.get('type', 'N/A')}", flush=True)
-
-                # Format symbol
-                cac_ma = order_symbol
+                # Format symbol: HOMEUSDT → HOME/USDT
                 symbol_formatted = cac_ma.replace("USDT", "/USDT")
-
-                # Xác định side từ order
-                side = order['info']['side']
-                vi_the_short_long = 'LONG' if side == "BUY" else 'SHORT'
-
-                # Đang chờ khớp (chưa có position)
-                cho_khop = "Y"
-                da_khop_mo_vi_the = "N"
-
-                # Price và leverage
-                gia_vao = order['info'].get('price', 0)
-                don_bay = "N"
-
-                # Chưa có SL/TP (chưa vào lệnh)
-                lenh_ls = "N"
-                lenh_tp = "N"
-                lenh_nguoc = 0
-
-                print(f"    ✓ Side: {vi_the_short_long}, Price: {gia_vao}", flush=True)
-                print(f"    ✓ Trạng thái: Chờ khớp", flush=True)
-
-            logger.info(f"{symbol_formatted}: {vi_the_short_long}, Activation={gia_vao}, Status=Chờ khớp")
             
-            row = build_cho_va_khop_row(
-                symbol_formatted=symbol_formatted,
-                side=vi_the_short_long,
-                status_d="N",  # Chưa khớp
-                entry_price=gia_vao,
-                leverage=don_bay,
-                has_sl=False,
-                has_tp=False,
-                order_count=lenh_nguoc,
-            )
-            _append_row(row, symbol_formatted)
+                # Xác định LONG/SHORT
+                vi_the_short_long = 'LONG' if position_amt > 0 else 'SHORT' if position_amt < 0 else 'Flat'
             
-        except Exception as e:
-            print(f"    ❌ Lỗi xử lý order: {e}", flush=True)
-            logger.error(f"Lỗi xử lý order {order.get('id', 'N/A')}: {e}", exc_info=True)
-            continue
+                # Đã khớp (có position)
+                cho_khop = "N"  # Không còn chờ
+                da_khop_mo_vi_the = "Y"  # Đã mở vị thế
+            
+                # Entry price và leverage - Parse an toàn
+                entry_price_raw = position.get('entryPrice')
+                if entry_price_raw is not None and entry_price_raw != '' and entry_price_raw != 0:
+                    try:
+                        gia_vao = float(entry_price_raw)
+                    except (ValueError, TypeError):
+                        gia_vao = 0.0
+                        logger.warning(f"{cac_ma}: Lỗi parse entryPrice: {entry_price_raw}")
+                else:
+                    gia_vao = 0.0
+                    logger.warning(f"{cac_ma}: entryPrice rỗng hoặc = 0, raw: {entry_price_raw}")
+            
+                leverage_raw = position.get('leverage')
+                if leverage_raw is not None and leverage_raw != '' and leverage_raw != 0:
+                    try:
+                        don_bay = int(float(leverage_raw))
+                    except (ValueError, TypeError):
+                        don_bay = 1
+                else:
+                    don_bay = 1
+            
+                # Lấy orders cho symbol này - dùng symbol_ccxt nếu có (format CCXT chuẩn)
+                symbol_for_orders = position.get('symbol_ccxt', cac_ma)
+                # Nếu không có symbol_ccxt, convert từ "HOMEUSDT" → "HOME/USDT:USDT"
+                if symbol_for_orders == cac_ma and 'symbol_ccxt' not in position:
+                    symbol_for_orders = cac_ma.replace("USDT", "/USDT:USDT")
+            
+                try:
+                    orders = exchange.fetch_open_orders(symbol=symbol_for_orders)
+                except Exception as e:
+                    logger.warning(f"Lỗi khi lấy open orders cho {symbol_for_orders}: {e}")
+                    orders = []
+            
+                # ✅ LOGIC MỚI: Phân tích chính xác SL/TP (quét cả algo orders)
+                # Truyền symbol để quét algo orders
+                has_sl, has_tp, order_count = check_sl_tp_orders(symbol_for_orders, orders)
+            
+                lenh_ls = "Y" if has_sl else "N"  # Cột G
+                lenh_tp = "Y" if has_tp else "N"  # Cột H
+                lenh_nguoc = order_count  # Cột I (số lượng orders)
+            
+                print(f"    ✓ Side: {vi_the_short_long}, Entry: {gia_vao}, Lev: {don_bay}x", flush=True)
+                print(f"    ✓ Orders: {order_count} (SL: {lenh_ls}, TP: {lenh_tp})", flush=True)
+            
+                # ⚠️ VALIDATION: SKIP NẾU ENTRY PRICE = 0
+                if gia_vao == 0.0 or gia_vao is None:
+                    print(f"    ❌ BỎ QUA: Entry price = 0 hoặc None! (Raw: {entry_price_raw})", flush=True)
+                    logger.error(f"❌ {symbol_formatted}: Entry price không hợp lệ (0 hoặc None). Raw: {entry_price_raw}")
+                    logger.error(f"   Position data: {position}")
+                    logger.error(f"   FULL RAW POSITION DATA: {position}")
+                    logger.error(f"   Position keys: {list(position.keys())}")
+                    # Log từng field quan trọng để debug
+                    for key in ['entryPrice', 'positionAmt', 'unrealizedProfit', 'leverage', 'markPrice', 'liquidationPrice', 'notional', 'isolated', 'marginType']:
+                        if key in position:
+                            logger.error(f"   {key}: {position[key]} (type: {type(position[key])})")
+                    _ghi_nho_ma_loi(cac_ma)   # dữ liệu tạm lỗi → giữ dòng cũ, không xoá
+                    continue  # Bỏ qua position này
+            
+                logger.info(f"{symbol_formatted}: {vi_the_short_long}, Entry={gia_vao}, Lev={don_bay}, Orders={order_count}, SL={lenh_ls}, TP={lenh_tp}")
+            
+                row = build_cho_va_khop_row(
+                    symbol_formatted=symbol_formatted,
+                    side=vi_the_short_long,
+                    status_d="Y",  # Position đang mở
+                    entry_price=gia_vao,
+                    leverage=don_bay,
+                    has_sl=has_sl,
+                    has_tp=has_tp,
+                    order_count=order_count,
+                )
+                _append_row(row, symbol_formatted)
+            
+            except Exception as e:
+                print(f"    ❌ Lỗi xử lý position {position.get('symbol')}: {e}", flush=True)
+                logger.error(f"Lỗi xử lý position {position.get('symbol')}: {e}", exc_info=True)
+                if not _ghi_nho_ma_loi(position.get('symbol')):
+                    raise LoiLayDuLieu(f"lỗi xử lý một vị thế không rõ mã: {e}")
+                continue
 
-    # [TASK 2] BƯỚC 4.5: Phát hiện vị thế ĐÓNG còn lệnh ngược treo
-    print(f"\n🔴 BƯỚC 4.5: Phát hiện vị thế ĐÓNG còn lệnh treo...", flush=True)
-    opened_symbols_set = set(p.get('symbol', '') for p in res)
-    closed_list = detect_closed_positions_with_residual_orders(opened_symbols_set)
+        # BƯỚC 3: Lấy orders chờ khớp (entry orders)
+        print("\n📝 BƯỚC 3: Lấy orders chờ khớp (entry orders)...", flush=True)
+        res1 = get_all_open_orders_with_single_order()
+        print(f"✅ Tổng orders chờ khớp: {len(res1)}\n", flush=True)
+        logger.info(f"Tổng orders chờ khớp: {len(res1)}")
 
-    for closed in closed_list:
-        try:
-            sym_clean = closed['symbol']
-            symbol_formatted = sym_clean.replace("USDT", "/USDT") if sym_clean.endswith("USDT") else sym_clean
-            side_str = closed.get('side') or ""
-            # Row ĐÓNG: entry=0 (user tick cột M để xóa lệnh ngược)
-            row = build_cho_va_khop_row(
-                symbol_formatted=symbol_formatted,
-                side=side_str,
-                status_d="ĐÓNG",
-                entry_price=0,
-                leverage="N",
-                has_sl=closed['has_sl'],
-                has_tp=closed['has_tp'],
-                order_count=closed['order_count'],
-            )
-            _append_row(row, symbol_formatted)
-            print(f"  📎 Thêm ĐÓNG: {symbol_formatted} (side={side_str}, orders={closed['order_count']})", flush=True)
-        except Exception as e:
-            logger.error(f"Lỗi tạo row ĐÓNG cho {closed.get('symbol')}: {e}", exc_info=True)
+        # BƯỚC 4: Xử lý từng order chờ khớp
+        print("🔧 BƯỚC 4: Xử lý orders chờ khớp...", flush=True)
+        for idx, order in enumerate(res1, 1):
+            try:
+                print(f"\n  [{idx}/{len(res1)}] Xử lý order...", flush=True)
+
+                # ✅ Check xem là algo order hay open order
+                is_algo_order = 'algoId' in order or 'algoType' in order
+
+                if is_algo_order:
+                    # === XỬ LÝ ALGO ORDER ===
+                    algo_id = order.get('algoId', 'N/A')
+                    algo_type = order.get('algoType', 'N/A')
+                    algo_status = order.get('algoStatus', 'N/A')
+
+                    print(f"    📌 Algo Order: AlgoId={algo_id}, Type={algo_type}, Status={algo_status}", flush=True)
+                    logger.info(f"Xử lý algo order: AlgoId={algo_id}, Type={algo_type}, Status={algo_status}")
+
+                    # Symbol từ order (Binance raw format: 1000CATUSDT)
+                    order_symbol = order.get('symbol', order.get('symbol_clean', order.get('symbol_ccxt', '')))
+                    # Chuẩn hóa về format HOMEUSDT để so sánh với position['symbol']
+                    order_symbol_clean = order_symbol.replace('/', '').replace(':USDT', '')
+
+                    # Skip nếu symbol đã có position (tránh dup dữ liệu — giống check ở open orders)
+                    if next((p for p in res if p.get('symbol', '') == order_symbol_clean), None):
+                        print(f"    ⏭️  Bỏ qua algo order (đã có position cho {order_symbol_clean})", flush=True)
+                        logger.info(f"Bỏ qua algo order {algo_id} của {order_symbol_clean}: đã có position")
+                        continue
+                    # Convert HOMEUSDT → HOME/USDT
+                    symbol_formatted = order_symbol.replace("USDT", "/USDT") if order_symbol else ""
+
+                    # [Bug A FIX] Raw Binance algo API trả về 'side' ở top-level, không qua 'info'
+                    algo_info = order.get('info', {})
+                    side = order.get('side', algo_info.get('side', 'UNKNOWN')).upper()
+                    vi_the_short_long = 'LONG' if side == "BUY" else 'SHORT'
+
+                    # Giá kích hoạt
+                    gia_vao = order.get('activatePrice', algo_info.get('activatePrice', 0))
+
+                    # Đang chờ khớp
+                    cho_khop = "Y"
+                    da_khop_mo_vi_the = "N"
+                    don_bay = "N"
+                    lenh_ls = "N"
+                    lenh_tp = "N"
+                    lenh_nguoc = 0
+
+                    print(f"    ✓ Symbol: {symbol_formatted}", flush=True)
+                    print(f"    ✓ Side: {vi_the_short_long}, Activation: {gia_vao}", flush=True)
+                    print(f"    ✓ Trạng thái: Chờ khớp (algo)", flush=True)
+
+                else:
+                    # === XỬ LÝ OPEN ORDER THÔNG THƯỜNG ===
+                    print(f"  [{idx}/{len(res1)}] Xử lý order {order.get('id', 'N/A')}...", flush=True)
+
+                    order_symbol = order['info']['symbol']
+
+                    # Skip nếu symbol đã có position (tránh trùng lặp)
+                    if next((position for position in res if order_symbol == position['symbol']), None):
+                        print(f"    ⏭️  Bỏ qua (đã có position)", flush=True)
+                        continue
+
+                    print(f"    ✓ Symbol: {order['symbol']}, Type: {order.get('type', 'N/A')}", flush=True)
+
+                    # Format symbol
+                    cac_ma = order_symbol
+                    symbol_formatted = cac_ma.replace("USDT", "/USDT")
+
+                    # Xác định side từ order
+                    side = order['info']['side']
+                    vi_the_short_long = 'LONG' if side == "BUY" else 'SHORT'
+
+                    # Đang chờ khớp (chưa có position)
+                    cho_khop = "Y"
+                    da_khop_mo_vi_the = "N"
+
+                    # Price và leverage
+                    gia_vao = order['info'].get('price', 0)
+                    don_bay = "N"
+
+                    # Chưa có SL/TP (chưa vào lệnh)
+                    lenh_ls = "N"
+                    lenh_tp = "N"
+                    lenh_nguoc = 0
+
+                    print(f"    ✓ Side: {vi_the_short_long}, Price: {gia_vao}", flush=True)
+                    print(f"    ✓ Trạng thái: Chờ khớp", flush=True)
+
+                logger.info(f"{symbol_formatted}: {vi_the_short_long}, Activation={gia_vao}, Status=Chờ khớp")
+            
+                row = build_cho_va_khop_row(
+                    symbol_formatted=symbol_formatted,
+                    side=vi_the_short_long,
+                    status_d="N",  # Chưa khớp
+                    entry_price=gia_vao,
+                    leverage=don_bay,
+                    has_sl=False,
+                    has_tp=False,
+                    order_count=lenh_nguoc,
+                )
+                _append_row(row, symbol_formatted)
+            
+            except Exception as e:
+                print(f"    ❌ Lỗi xử lý order: {e}", flush=True)
+                logger.error(f"Lỗi xử lý order {order.get('id', 'N/A')}: {e}", exc_info=True)
+                ma = order.get('symbol_clean') or (order.get('info') or {}).get('symbol') or order.get('symbol')
+                if not _ghi_nho_ma_loi(ma):
+                    raise LoiLayDuLieu(f"lỗi xử lý một lệnh chờ không rõ mã: {e}")
+                continue
+
+        # [TASK 2] BƯỚC 4.5: Phát hiện vị thế ĐÓNG còn lệnh ngược treo
+        print(f"\n🔴 BƯỚC 4.5: Phát hiện vị thế ĐÓNG còn lệnh treo...", flush=True)
+        opened_symbols_set = set(p.get('symbol', '') for p in res)
+        closed_list = detect_closed_positions_with_residual_orders(opened_symbols_set)
+
+        for closed in closed_list:
+            try:
+                sym_clean = closed['symbol']
+                symbol_formatted = sym_clean.replace("USDT", "/USDT") if sym_clean.endswith("USDT") else sym_clean
+                side_str = closed.get('side') or ""
+                # Row ĐÓNG: entry=0 (user tick cột M để xóa lệnh ngược)
+                row = build_cho_va_khop_row(
+                    symbol_formatted=symbol_formatted,
+                    side=side_str,
+                    status_d="ĐÓNG",
+                    entry_price=0,
+                    leverage="N",
+                    has_sl=closed['has_sl'],
+                    has_tp=closed['has_tp'],
+                    order_count=closed['order_count'],
+                )
+                _append_row(row, symbol_formatted)
+                print(f"  📎 Thêm ĐÓNG: {symbol_formatted} (side={side_str}, orders={closed['order_count']})", flush=True)
+            except Exception as e:
+                logger.error(f"Lỗi tạo row ĐÓNG cho {closed.get('symbol')}: {e}", exc_info=True)
+                if not _ghi_nho_ma_loi(closed.get('symbol')):
+                    raise LoiLayDuLieu(f"lỗi tạo dòng ĐÓNG không rõ mã: {e}")
+        return closed_list
+
+    try:
+        closed_list = _thu_thap()
+    except LoiLayDuLieu as e:
+        # Thiếu dữ liệu → ghi là ghi một bảng THIẾU → J–P mất chỗ dựa. Bỏ cả vòng.
+        print(f"\n⛔ Lấy dữ liệu Binance KHÔNG ĐỦ ({e}) — vòng này KHÔNG ghi sheet, "
+              f"giữ nguyên bảng cũ. Thử lại vòng sau.", flush=True)
+        logger.error(f"Bỏ ghi vòng này — dữ liệu Binance không đủ: {e}")
+        return
 
     # BƯỚC 5: Cập nhật lên Google Sheet
     print(f"\n📤 BƯỚC 5: Cập nhật lên Google Sheet...", flush=True)
@@ -1055,23 +968,26 @@ def do_it():
     logger.info(f"Tổng dòng dữ liệu: {len(tab_100_ma_2d_arr)} (ĐÓNG: {len(closed_list)})")
     
     try:
-        # Chụp A–Q TRƯỚC khi ghi: để J–P (của người dùng) dời theo đúng mã
+        # Chụp A–P TRƯỚC khi ghi: mã nào đang ở dòng nào → giữ nguyên dòng đó
         anh_cu = doc_anh_cu_cho_va_khop()
 
         timestamp_str = current_time.strftime("%Y-%m-%d %H:%M:%S")
-        # A2 + A–I + Q + J–P trong MỘT lệnh, KHÔNG xoá trước. Gợi ý SL/TP vào N/O/P
-        # chỉ điền ô trống, không đè số người dùng sửa — thiếu bước này thì N/O/P
-        # luôn trống → hd_order_multi bỏ qua mọi dòng → vị thế KHÔNG CÓ CẮT LỖ.
-        ke_hoach = ke_hoach_ghi_cho_va_khop(tab_100_ma_2d_arr, tab_q_prices, tab_sltp,
-                                            anh_cu, timestamp_str)
-        print(f"  ✍️  Ghi A2 ({timestamp_str}) + A–I + Q"
-              f"{' + J–P' if len(ke_hoach) > 3 else ''} vào sheet {gg_sheet_factory.spreadsheetId} "
-              f"· tab '{gg_sheet_factory.tab_cho_va_khop}' (1 lệnh)", flush=True)
+        # CHỈ A2 + A4:I trong MỘT lệnh. Bot không ghi J–P / Q nữa: J–P là của người
+        # dùng; SL/TP mặc định khi N/O/P trống do hd_order_multi tự tính trong bộ nhớ.
+        ke_hoach = ke_hoach_ghi_cho_va_khop(tab_100_ma_2d_arr, anh_cu, timestamp_str,
+                                            giu_ma=_ma_loi_vong)
+        if ke_hoach is None:
+            return
+        if _ma_loi_vong:
+            print(f"  ⚠️  Giữ nguyên dòng cũ của mã lỗi vòng này: {sorted(_ma_loi_vong)}", flush=True)
+        vung = ke_hoach[1][0]
+        print(f"  ✍️  Ghi A2 ({timestamp_str}) + {vung} vào sheet {gg_sheet_factory.spreadsheetId} "
+              f"· tab '{gg_sheet_factory.tab_cho_va_khop}' (1 lệnh, KHÔNG đụng J–P)", flush=True)
         gg_sheet_factory.batch_update_values(gg_sheet_factory.tab_cho_va_khop, ke_hoach)
 
-        print(f"✅ Hoàn thành! Đã cập nhật {len(tab_100_ma_2d_arr)} dòng (A–I + cột Q)", flush=True)
+        print(f"✅ Hoàn thành! Đã cập nhật {len(tab_100_ma_2d_arr)} mã (chỉ A–I)", flush=True)
         logger.info(f"✅ Hoàn thành cập nhật sheet {gg_sheet_factory.spreadsheetId} "
-                    f"tab '{gg_sheet_factory.tab_cho_va_khop}': {len(tab_100_ma_2d_arr)} dòng (A–I + Q)")
+                    f"tab '{gg_sheet_factory.tab_cho_va_khop}': {len(tab_100_ma_2d_arr)} mã, vùng {vung}")
         
     except HttpError as e:
         # ✅ Xử lý đặc biệt cho lỗi 403 (Permission denied)

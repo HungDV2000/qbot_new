@@ -820,6 +820,6 @@ default_tp_rate_layer_3 = config.getfloat('global', 'default_tp_rate_layer_3', f
 
 # Cột S "Cho phép đặt lệnh" — mặc định N (user phải chủ động đổi sang Y)
 default_allow_order = config.get('global', 'default_allow_order', fallback='N').strip().upper()
-# Bật/tắt tính năng auto-fill default (tắt → cột J-S luôn rỗng như trước)
+# N/O/P trống → hd_order_multi tự tính SL/TP mặc định trong bộ nhớ (tắt → không tự tính)
 fill_default_cho_va_khop = config.getboolean('global', 'fill_default_cho_va_khop', fallback=True)
 
