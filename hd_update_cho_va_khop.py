@@ -5,6 +5,8 @@ import config_watcher
 import cot_nguoi_dung
 import gg_sheet_factory
 import logging
+import telegram_factory
+import time
 from datetime import datetime
 import os
 from googleapiclient.errors import HttpError
@@ -398,6 +400,58 @@ def detect_closed_positions_with_residual_orders(opened_positions_symbols):
         print(f"✅ Không có vị thế ĐÓNG còn lệnh treo", flush=True)
 
     return closed_list
+
+
+# ── Báo Telegram khi bot KHÔNG ghi được sheet (bảng đứng yên, khách không biết) ──
+MA_LOI_KEY = ('-1022', '-2014', '-2015', 'Signature for this request', 'API-key format',
+              'Invalid API-key')
+VONG_BO_GHI_TRUOC_KHI_BAO = 3       # lỗi tạm (mạng, 429) thường tự hết sau 1–2 vòng
+NHAC_LAI_GIAY = 3600
+_bo_ghi = {"so_vong": 0, "bao_luc": 0.0, "da_bao": False}
+
+
+def _gui_tele(msg):
+    try:
+        telegram_factory.send_tele(msg, cst.chat_id, True, True)
+    except Exception as e:
+        logger.error(f"Lỗi gửi Telegram: {e}")
+
+
+def la_loi_key(loi):
+    return any(m in str(loi) for m in MA_LOI_KEY)
+
+
+def bao_bo_ghi(loi, bay_gio=None):
+    """Gọi mỗi vòng BỎ GHI. Key sai → báo ngay; lỗi khác → báo khi bỏ ≥ 3 vòng liền.
+    Nhắc lại tối đa 1 giờ/lần. Trả True nếu vừa gửi tin."""
+    bay_gio = time.time() if bay_gio is None else bay_gio
+    _bo_ghi["so_vong"] += 1
+    key_sai = la_loi_key(loi)
+    if not key_sai and _bo_ghi["so_vong"] < VONG_BO_GHI_TRUOC_KHI_BAO:
+        return False
+    if _bo_ghi["da_bao"] and bay_gio - _bo_ghi["bao_luc"] < NHAC_LAI_GIAY:
+        return False
+    if key_sai:
+        msg = (f"🔑 <b>[{cst.account_name}] API KEY / SECRET KHÔNG HỢP LỆ</b>\n"
+               f"Binance từ chối chữ ký ({str(loi)[:160]}).\n"
+               f"Thường do <b>API Secret dán sai / không khớp API Key</b>, hoặc key đã bị xoá / "
+               f"tạo lại trên Binance. Sửa dòng [{cst.account_name}] trên SHEET TỔNG — bot tự nhận.\n"
+               f"Trong lúc này tab Chờ và khớp KHÔNG được cập nhật và bot không đặt được lệnh.")
+    else:
+        msg = (f"⚠️ <b>[{cst.account_name}] Chờ và khớp chưa cập nhật {_bo_ghi['so_vong']} vòng liền</b>\n"
+               f"Lấy dữ liệu Binance lỗi: {str(loi)[:200]}\n"
+               f"Bot giữ nguyên bảng cũ (không xoá dữ liệu của bạn), tự thử lại mỗi vòng.")
+    _bo_ghi.update(bao_luc=bay_gio, da_bao=True)
+    _gui_tele(msg)
+    return True
+
+
+def bao_da_ghi_lai():
+    """Ghi sheet thành công: nếu trước đó đã báo lỗi thì báo đã hồi phục."""
+    if _bo_ghi["da_bao"]:
+        _gui_tele(f"✅ [{cst.account_name}] Chờ và khớp đã cập nhật lại bình thường "
+                  f"(sau {_bo_ghi['so_vong']} vòng bỏ ghi).")
+    _bo_ghi.update(so_vong=0, bao_luc=0.0, da_bao=False)
 
 
 def doc_anh_cu_cho_va_khop():
@@ -960,6 +1014,10 @@ def do_it():
         print(f"\n⛔ Lấy dữ liệu Binance KHÔNG ĐỦ ({e}) — vòng này KHÔNG ghi sheet, "
               f"giữ nguyên bảng cũ. Thử lại vòng sau.", flush=True)
         logger.error(f"Bỏ ghi vòng này — dữ liệu Binance không đủ: {e}")
+        if la_loi_key(e):
+            print(f"🔑 Lỗi KEY: API Secret sai / không khớp API Key của [{cst.account_name}] — "
+                  f"sửa trên SHEET TỔNG.", flush=True)
+        bao_bo_ghi(e)
         return
 
     # BƯỚC 5: Cập nhật lên Google Sheet
@@ -984,6 +1042,7 @@ def do_it():
         print(f"  ✍️  Ghi A2 ({timestamp_str}) + {vung} vào sheet {gg_sheet_factory.spreadsheetId} "
               f"· tab '{gg_sheet_factory.tab_cho_va_khop}' (1 lệnh, KHÔNG đụng J–P)", flush=True)
         gg_sheet_factory.batch_update_values(gg_sheet_factory.tab_cho_va_khop, ke_hoach)
+        bao_da_ghi_lai()
 
         print(f"✅ Hoàn thành! Đã cập nhật {len(tab_100_ma_2d_arr)} mã (chỉ A–I)", flush=True)
         logger.info(f"✅ Hoàn thành cập nhật sheet {gg_sheet_factory.spreadsheetId} "

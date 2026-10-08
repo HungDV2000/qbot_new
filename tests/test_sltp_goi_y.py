@@ -171,6 +171,52 @@ class TestBinanceLoiThiKhongGhi(unittest.TestCase):
         self.assertEqual(kh["A4:I4"], [BTC])
 
 
+class TestBaoTelegramKhiBoGhi(unittest.TestCase):
+    """Khách 08/10 (q3lam): key sai -1022 → bot bỏ ghi mãi mà chỉ in ra màn hình."""
+
+    def setUp(self):
+        self.M, _ = _nap_module()
+        self.tin = []
+        self.M.telegram_factory.send_tele = lambda msg, *a, **k: self.tin.append(msg)
+
+    def test_key_sai_bao_ngay(self):
+        loi = self.M.LoiLayDuLieu('không lấy được vị thế: binance {"code":-1022,"msg":"Signature for this request is not valid."}')
+        self.assertTrue(self.M.bao_bo_ghi(loi, 1000))
+        self.assertIn("API KEY / SECRET", self.tin[0])
+        self.assertIn("SHEET TỔNG", self.tin[0])
+
+    def test_loi_mang_chi_bao_sau_3_vong(self):
+        loi = self.M.LoiLayDuLieu("timeout")
+        self.assertFalse(self.M.bao_bo_ghi(loi, 1000))
+        self.assertFalse(self.M.bao_bo_ghi(loi, 1120))
+        self.assertTrue(self.M.bao_bo_ghi(loi, 1240))
+        self.assertIn("3 vòng", self.tin[0])
+
+    def test_nhac_lai_toi_da_1_gio(self):
+        loi = self.M.LoiLayDuLieu("-1022")
+        self.M.bao_bo_ghi(loi, 1000)
+        self.assertFalse(self.M.bao_bo_ghi(loi, 1000 + 1800))
+        self.assertTrue(self.M.bao_bo_ghi(loi, 1000 + 3601))
+        self.assertEqual(len(self.tin), 2)
+
+    def test_hoi_phuc_thi_bao_va_dat_lai(self):
+        self.M.bao_bo_ghi(self.M.LoiLayDuLieu("-1022"), 1000)
+        self.M.bao_da_ghi_lai()
+        self.assertIn("cập nhật lại", self.tin[-1])
+        self.M.bao_da_ghi_lai()
+        self.assertEqual(len(self.tin), 2, "không báo hồi phục khi chưa từng báo lỗi")
+        self.assertFalse(self.M.bao_bo_ghi(self.M.LoiLayDuLieu("timeout"), 5000), "đếm lại từ 0")
+
+    def test_do_it_key_sai_gui_tin(self):
+        class Ex:
+            def fetch_positions(self, *a, **k):
+                raise RuntimeError('binance {"code":-1022,"msg":"Signature for this request is not valid."}')
+            def fetch_open_orders(self, *a, **k): return []
+        self.M.exchange = Ex()
+        self.M.do_it()
+        self.assertEqual(len(self.tin), 1)
+
+
 class TestNguon(unittest.TestCase):
     def _src(self):
         import io as _io
