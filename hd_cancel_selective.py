@@ -94,8 +94,9 @@ GIA_TRI_TICK = {"Y", "YES", "TRUE", "1", "X", "TICK", "✓", "✔"}
 # Tick vừa xử lý: {(khoá dòng, cột): {"t": lúc xử lý, "da_xoa_tick": bool}}
 #   • Chưa xoá được tick trên sheet → chỉ thử xoá tick lại, KHÔNG xoá lệnh lần 2
 #     (tick J lần 2 sẽ xoá cả lệnh vào mới đặt sau đó).
-#   • Đã xoá tick mà tick hiện lại trong CHAN_LAP_GIAY → là tick "ma" do
-#     hd_update_cho_va_khop ghi lại J–P từ ảnh chụp cũ → chỉ xoá tick.
+#   • Đã xoá tick mà tick hiện lại trong CHAN_LAP_GIAY → coi là tick "ma" → chỉ xoá
+#     tick. (Trước 08/10/2026 hd_update_cho_va_khop ghi lại J–P từ ảnh chụp cũ nên
+#     hay gặp; nay bot đó chỉ ghi A–I — giữ lại để phòng sheet/công thức ghi lại tick.)
 #   • "ket": xoá xong đọc lại mà tick VẪN CÒN → ô do công thức/IMPORTRANGE tràn vào,
 #     xoá giá trị không ăn. Khách 07/10: K4/L4 = Y kẹt → bot chạy lại tick K mỗi 4 phút
 #     (180s chặn lặp + 1 vòng) — vô hại khi chưa có SL/TP, nhưng có SL/TP là xoá cắt lỗ
