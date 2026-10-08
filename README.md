@@ -26,6 +26,7 @@ Chép 3 file vào thư mục này (không có sẵn vì chứa thông tin riêng
 | `token.json` | **Bấm đúp `dang_nhap_google.py`** — đăng nhập Google 1 lần là có |
 
 Soát cấu hình trước khi bật (không đặt lệnh): `python kiem_tra_cau_hinh.py`
+Kiểm API key Binance của mọi tài khoản (chỉ đọc) khi gặp -1022 / -2014 / -2015: `python kiem_tra_key.py`
 
 ---
 
@@ -167,6 +168,7 @@ Bản đầy đủ của chúng nằm ở `qbot_setup/`.
 | Đặt lệnh trùng | Hai thư mục bot cùng chạy chung API key. Khoá chống trùng chỉ có tác dụng trong từng thư mục |
 | Telegram báo *"GIỮ NGUYÊN cấu hình đang chạy"* | Dòng đang chạy bị sửa hỏng (xem tin nhắn). Sửa lại dòng đó — bot tự nhận |
 | Telegram báo *"bị BỎ QUA, không chạy"* | Dòng đó có lỗi (key dán thiếu, trùng key…). Chỉ dòng đó không chạy, các dòng khác vẫn chạy. Sửa là bot tự mở |
+| Báo -1022 "Signature … not valid" | Secret không khớp Key (hoặc thư viện) — chạy `python kiem_tra_key.py`, xem kết luận từng tài khoản |
 | Sửa sheet tổng mà bot không đổi | Chờ đủ `config_reload_seconds`; hoặc dòng đó đang lỗi — xem Telegram / `kiem_tra_cau_hinh.py` |
 
 Log: `logs/<tài_khoản>/`, lỗi ở `logs/<tài_khoản>/error.log`.
